@@ -262,10 +262,12 @@ def get_period_totals(
     return total_qtd, total_vl
 
 
-def previous_period(year: int, month: int) -> Tuple[int, int]:
+def previous_period(year: int, month: int) -> Optional[Tuple[int, int]]:
     if month > 1:
         return year, month - 1
-    return max(year - 1, 1), 12
+    if year <= 1:
+        return None
+    return year - 1, 12
 
 
 def format_currency(value: float) -> str:
@@ -362,7 +364,7 @@ if df.empty:
 # -----------------------------------------------------------------------------
 current_year = max(selected_years_tuple)
 current_month = max(selected_months_tuple)
-prev_year, prev_month = previous_period(current_year, current_month)
+prev_period = previous_period(current_year, current_month)
 
 current_qtd, current_vl = get_period_totals(
     current_year,
@@ -370,12 +372,21 @@ current_qtd, current_vl = get_period_totals(
     selected_ufs,
     selected_municipios,
 )
-prev_qtd, prev_vl = get_period_totals(
-    prev_year,
-    prev_month,
-    selected_ufs,
-    selected_municipios,
-)
+if prev_period:
+    prev_year, prev_month = prev_period
+    prev_qtd, prev_vl = get_period_totals(
+        prev_year,
+        prev_month,
+        selected_ufs,
+        selected_municipios,
+    )
+    delta_caption = (
+        f"Delta calculado em relação ao período anterior ({prev_year}-{prev_month:02d}) "
+        "com os mesmos filtros geográficos."
+    )
+else:
+    prev_qtd, prev_vl = 0.0, 0.0
+    delta_caption = "Delta indisponível: não há período anterior válido para o recorte atual."
 
 kpi_total_qtd = float(df["total_qtd"].sum())
 kpi_total_vl = float(df["total_vl"].sum())
@@ -401,10 +412,7 @@ kpi3.metric(
     delta=format_delta(current_ticket_medio, prev_ticket),
 )
 
-st.caption(
-    f"Delta calculado em relação ao período anterior ({prev_year}-{prev_month:02d}) "
-    "com os mesmos filtros geográficos."
-)
+st.caption(delta_caption)
 
 # -----------------------------------------------------------------------------
 # Abas principais
