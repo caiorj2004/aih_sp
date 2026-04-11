@@ -266,7 +266,8 @@ def previous_period(year: int, month: int) -> Tuple[int, int]:
 
 
 def format_currency(value: float) -> str:
-    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    br_map = str.maketrans({",": ".", ".": ","})
+    return f"R$ {value:,.2f}".translate(br_map)
 
 
 def format_delta(current: float, previous: float) -> Optional[str]:
@@ -373,6 +374,7 @@ prev_qtd, prev_vl = get_period_totals(
 kpi_total_qtd = float(df["total_qtd"].sum())
 kpi_total_vl = float(df["total_vl"].sum())
 kpi_ticket_medio = (kpi_total_vl / kpi_total_qtd) if kpi_total_qtd else 0.0
+current_ticket_medio = (current_vl / current_qtd) if current_qtd else 0.0
 
 kpi1, kpi2, kpi3 = st.columns(3)
 kpi1.metric(
@@ -390,7 +392,7 @@ prev_ticket = (prev_vl / prev_qtd) if prev_qtd else 0.0
 kpi3.metric(
     "Valor Médio por Procedimento",
     format_currency(kpi_ticket_medio),
-    delta=format_delta((current_vl / current_qtd) if current_qtd else 0.0, prev_ticket),
+    delta=format_delta(current_ticket_medio, prev_ticket),
 )
 
 st.caption(
