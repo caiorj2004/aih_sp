@@ -30,14 +30,28 @@ MIN_VALID_YEAR = 1
 
 _ALLOWED_TABLES = {"aih_qtd", "aih_vl", "municipios_ibge", "unidade_federacao"}
 
-# Expressão SQL que converte a coluna `mes` para INTEGER independentemente de ela
-# armazenar um número ("6") ou uma abreviação de mês em inglês ("Jun").
-_MES_TO_INT = (
-    "CASE WHEN TRIM(q.mes) ~ '^[0-9]+$'"
-    " THEN TRIM(q.mes)::INTEGER"
-    " ELSE EXTRACT(MONTH FROM TO_DATE(TRIM(q.mes), 'Mon'))::INTEGER"
-    " END"
-)
+_MONTH_ABBRS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def month_to_num(mes: str) -> int:
+    """Converte abreviação de mês ('Jun') ou string numérica ('6') para inteiro 1-12."""
+    try:
+        return int(mes)
+    except (ValueError, TypeError):
+        try:
+            return _MONTH_ABBRS.index(str(mes).capitalize()[:3]) + 1
+        except ValueError:
+            return 0
+
+
+def _month_to_str(num: int, original_sample: str) -> str:
+    """Formata número de mês no mesmo estilo da amostra original ('Jun' ou '6')."""
+    try:
+        int(original_sample)
+        return str(num)
+    except (ValueError, TypeError):
+        return _MONTH_ABBRS[num - 1]
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +177,7 @@ def get_procedure_columns() -> Tuple[List[str], List[str]]:
 
 
 @st.cache_data(ttl=1800)
-def load_filter_options() -> Tuple[List[int], List[int], pd.DataFrame]:
+def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
     """
     Carrega todas as combinações de Ano, Mês e UF disponíveis no banco.
     Usado para popular os filtros da sidebar.
@@ -173,8 +187,8 @@ def load_filter_options() -> Tuple[List[int], List[int], pd.DataFrame]:
 
     query = f"""
         SELECT DISTINCT
-            CAST(TRIM(q.ano) AS INTEGER)              AS ano,
-            ({_MES_TO_INT})                           AS mes,
+            TRIM(q.ano)                               AS ano,
+            TRIM(q.mes)                               AS mes,
             CAST(m.uf_codigo AS TEXT)                 AS uf_codigo,
             CAST(u.{mapping['uf_name_col']} AS TEXT)  AS uf_nome
         FROM aih_qtd q
@@ -183,8 +197,8 @@ def load_filter_options() -> Tuple[List[int], List[int], pd.DataFrame]:
     """
     options_df = conn.query(query, ttl=1800)
 
-    years = sorted(options_df["ano"].dropna().astype(int).unique().tolist())
-    months = sorted(options_df["mes"].dropna().astype(int).unique().tolist())
+    years = sorted(options_df["ano"].dropna().unique().tolist())
+    months = sorted(options_df["mes"].dropna().unique().tolist(), key=month_to_num)
     uf_df = (
         options_df[["uf_codigo", "uf_nome"]]
         .drop_duplicates()
@@ -221,8 +235,8 @@ def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
 
 @st.cache_data(ttl=900)
 def load_consolidated_data(
-    selected_years: Tuple[int, ...],
-    selected_months: Tuple[int, ...],
+    selected_years: Tuple[str, ...],
+    selected_months: Tuple[str, ...],
     selected_ufs: Tuple[str, ...],
     selected_municipios: Tuple[str, ...],
 ) -> pd.DataFrame:
@@ -243,8 +257,8 @@ def load_consolidated_data(
         extra_cols = ",\n            " + extra_cols
 
     params: Dict[str, object] = {}
-    year_filter = _build_in_clause("CAST(TRIM(q.ano) AS INTEGER)", selected_years, "ano", params)
-    month_filter = _build_in_clause(f"({_MES_TO_INT})", selected_months, "mes", params)
+    year_filter = _build_in_clause("TRIM(q.ano)", selected_years, "ano", params)
+    month_filter = _build_in_clause("TRIM(q.mes)", selected_months, "mes", params)
     uf_filter = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", params)
     municipio_filter = _build_in_clause(
         f"CAST(m.{mapping['municipio_code_col']} AS TEXT)", selected_municipios, "mun", params
@@ -252,8 +266,8 @@ def load_consolidated_data(
 
     query = f"""
         SELECT
-            CAST(TRIM(q.ano) AS INTEGER)                            AS ano,
-            ({_MES_TO_INT})                                         AS mes,
+            TRIM(q.ano)                                             AS ano,
+            TRIM(q.mes)                                             AS mes,
             CAST(q.cod_municipio AS TEXT)                           AS cod_municipio,
             CAST(m.{mapping['municipio_name_col']} AS TEXT)         AS municipio_nome,
             CAST(m.uf_codigo AS TEXT)                               AS uf_codigo,
@@ -287,8 +301,8 @@ def load_consolidated_data(
 
 @st.cache_data(ttl=900)
 def get_period_totals(
-    year: int,
-    month: int,
+    year: str,
+    month: str,
     selected_ufs: Tuple[str, ...],
     selected_municipios: Tuple[str, ...],
 ) -> Tuple[float, float]:
@@ -315,8 +329,8 @@ def get_period_totals(
             AND v.mes          = q.mes
             AND v.cod_municipio = q.cod_municipio
         JOIN municipios_ibge m ON m.{mapping['municipio_code_col']} = q.cod_municipio
-        WHERE CAST(TRIM(q.ano) AS INTEGER) = :year
-          AND ({_MES_TO_INT}) = :month
+        WHERE TRIM(q.ano) = :year
+          AND TRIM(q.mes) = :month
           {uf_filter}
           {municipio_filter}
     """
@@ -335,13 +349,15 @@ def get_period_totals(
 # ---------------------------------------------------------------------------
 
 
-def previous_period(year: int, month: int) -> Optional[Tuple[int, int]]:
+def previous_period(year: str, month: str) -> Optional[Tuple[str, str]]:
     """Retorna o período imediatamente anterior. None se não houver período válido."""
-    if month > 1:
-        return year, month - 1
-    if year <= MIN_VALID_YEAR:
+    m = month_to_num(month)
+    y = int(year)
+    if m > 1:
+        return year, _month_to_str(m - 1, month)
+    if y <= MIN_VALID_YEAR:
         return None
-    return year - 1, 12
+    return str(y - 1), _month_to_str(12, month)
 
 
 def calculate_average_ticket(total_value: float, total_quantity: float) -> float:

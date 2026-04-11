@@ -25,6 +25,7 @@ from db import (
     load_consolidated_data,
     load_filter_options,
     load_municipality_options,
+    month_to_num,
     previous_period,
 )
 
@@ -83,7 +84,6 @@ with st.sidebar:
         "Mês",
         options=months,
         default=months,
-        format_func=lambda m: f"{m:02d}",
     )
 
     uf_label_to_code = {
@@ -113,7 +113,7 @@ with st.sidebar:
 # Validação dos filtros obrigatórios
 # ---------------------------------------------------------------------------
 selected_years_tuple = tuple(sorted(selected_years))
-selected_months_tuple = tuple(sorted(selected_months))
+selected_months_tuple = tuple(sorted(selected_months, key=month_to_num))
 
 if not selected_years_tuple or not selected_months_tuple:
     st.warning("Selecione ao menos um ano e um mês para continuar.")
@@ -137,7 +137,7 @@ if df.empty:
 # KPIs — Métricas de alto nível com delta vs. período anterior
 # ---------------------------------------------------------------------------
 current_year = max(selected_years_tuple)
-current_month = max(selected_months_tuple)
+current_month = max(selected_months_tuple, key=month_to_num)
 prev_period = previous_period(current_year, current_month)
 
 current_qtd, current_vl = get_period_totals(
@@ -150,7 +150,7 @@ if prev_period:
         prev_year, prev_month, selected_ufs, selected_municipios
     )
     delta_caption = (
-        f"Delta calculado em relação ao período anterior ({prev_year}-{prev_month:02d}) "
+        f"Delta calculado em relação ao período anterior ({prev_year}-{prev_month}) "
         "com os mesmos filtros geográficos."
     )
 else:
@@ -225,10 +225,11 @@ with tab_charts:
     series = (
         df.groupby(["ano", "mes"], as_index=False)[["total_qtd", "total_vl"]]
         .sum()
-        .sort_values(["ano", "mes"])
     )
+    series["_mes_num"] = series["mes"].apply(month_to_num)
+    series = series.sort_values(["ano", "_mes_num"]).drop(columns=["_mes_num"])
     series["periodo"] = pd.to_datetime(
-        series["ano"].astype(str) + "-" + series["mes"].astype(str).str.zfill(2) + "-01"
+        series["ano"].astype(str) + "-" + series["mes"].apply(month_to_num).astype(str).str.zfill(2) + "-01"
     )
 
     fig_line = go.Figure()
