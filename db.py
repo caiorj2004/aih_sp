@@ -112,10 +112,15 @@ def get_dimension_mapping() -> Dict[str, str]:
     municipio_cols = get_table_columns("municipios_ibge")
     uf_cols = get_table_columns("unidade_federacao")
 
+    municipio_code_col = _first_existing(
+        ["cod_municipio", "co_municipio", "codigo_municipio", "id_municipio"],
+        municipio_cols,
+        municipio_cols[0] if municipio_cols else "cod_municipio",
+    )
     municipio_name_col = _first_existing(
         ["nome_municipio", "no_municipio", "municipio", "nome"],
         municipio_cols,
-        "cod_municipio",
+        municipio_code_col,
     )
     # `co_uf_prova` é a chave primária/de ligação da tabela unidade_federacao
     uf_name_col = _first_existing(
@@ -125,6 +130,7 @@ def get_dimension_mapping() -> Dict[str, str]:
     )
 
     return {
+        "municipio_code_col": municipio_code_col,
         "municipio_name_col": municipio_name_col,
         "uf_name_col": uf_name_col,
     }
@@ -159,7 +165,7 @@ def load_filter_options() -> Tuple[List[int], List[int], pd.DataFrame]:
             CAST(m.uf_codigo AS TEXT)                 AS uf_codigo,
             CAST(u.{mapping['uf_name_col']} AS TEXT)  AS uf_nome
         FROM aih_qtd q
-        JOIN municipios_ibge m   ON m.cod_municipio = q.cod_municipio
+        JOIN municipios_ibge m   ON m.{mapping['municipio_code_col']} = q.cod_municipio
         JOIN unidade_federacao u ON u.co_uf_prova   = m.uf_codigo
     """
     options_df = conn.query(query, ttl=1800)
@@ -189,7 +195,7 @@ def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
 
     query = f"""
         SELECT DISTINCT
-            CAST(m.cod_municipio AS TEXT)                           AS cod_municipio,
+            CAST(m.{mapping['municipio_code_col']} AS TEXT)                AS cod_municipio,
             CAST(m.{mapping['municipio_name_col']} AS TEXT)         AS municipio_nome,
             CAST(m.uf_codigo AS TEXT)                               AS uf_codigo
         FROM municipios_ibge m
@@ -228,7 +234,7 @@ def load_consolidated_data(
     month_filter = _build_in_clause("CAST(TRIM(q.mes) AS INTEGER)", selected_months, "mes", params)
     uf_filter = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", params)
     municipio_filter = _build_in_clause(
-        "CAST(m.cod_municipio AS TEXT)", selected_municipios, "mun", params
+        f"CAST(m.{mapping['municipio_code_col']} AS TEXT)", selected_municipios, "mun", params
     )
 
     query = f"""
@@ -247,7 +253,7 @@ def load_consolidated_data(
             ON  v.ano          = q.ano
             AND v.mes          = q.mes
             AND v.cod_municipio = q.cod_municipio
-        JOIN municipios_ibge m   ON m.cod_municipio = q.cod_municipio
+        JOIN municipios_ibge m   ON m.{mapping['municipio_code_col']} = q.cod_municipio
         JOIN unidade_federacao u ON u.co_uf_prova   = m.uf_codigo
         WHERE 1=1
         {year_filter}
@@ -278,11 +284,12 @@ def get_period_totals(
     Usado no cálculo dos deltas dos KPIs.
     """
     conn = get_connection()
+    mapping = get_dimension_mapping()
 
     params: Dict[str, object] = {"year": year, "month": month}
     uf_filter = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", params)
     municipio_filter = _build_in_clause(
-        "CAST(m.cod_municipio AS TEXT)", selected_municipios, "mun", params
+        f"CAST(m.{mapping['municipio_code_col']} AS TEXT)", selected_municipios, "mun", params
     )
 
     query = f"""
@@ -294,7 +301,7 @@ def get_period_totals(
             ON  v.ano          = q.ano
             AND v.mes          = q.mes
             AND v.cod_municipio = q.cod_municipio
-        JOIN municipios_ibge m ON m.cod_municipio = q.cod_municipio
+        JOIN municipios_ibge m ON m.{mapping['municipio_code_col']} = q.cod_municipio
         WHERE CAST(TRIM(q.ano) AS INTEGER) = :year
           AND CAST(TRIM(q.mes) AS INTEGER) = :month
           {uf_filter}
