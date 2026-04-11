@@ -4,7 +4,7 @@ Dashboard Streamlit para análise de dados de AIH (DATASUS/SUS) usando PostgreSQ
 
 ## Configuração
 
-1. Crie o arquivo `/home/runner/work/aih_sp/aih_sp/.streamlit/secrets.toml` (não versionado):
+1. Crie o arquivo `.streamlit/secrets.toml` (não versionado):
 
 ```toml
 [connections.postgresql]
