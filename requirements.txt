@@ -2,4 +2,4 @@ streamlit>=1.33
 pandas>=2.0
 plotly>=5.20
 sqlalchemy>=2.0
-psycopg2-binary>=2.9
+psycopg2>=2.9

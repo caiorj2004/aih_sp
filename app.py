@@ -10,6 +10,7 @@ st.set_page_config(page_title="Dashboard AIH SUS", page_icon="📊", layout="wid
 
 BR_CURRENCY_TRANS = str.maketrans({",": ".", ".": ","})
 EPSILON = 1e-9
+MIN_VALID_YEAR = 1
 
 
 @st.cache_resource
@@ -72,7 +73,7 @@ def get_dimension_mapping() -> Dict[str, str]:
         municipio_cols,
         "cod_municipio",
     )
-    # O enunciado define `co_uf_prova` como chave primária da tabela de UF.
+    # `co_uf_prova` é utilizado como chave de ligação da dimensão de UF.
     uf_name_col = first_existing(
         ["sigla_uf", "sg_uf", "uf", "nome_uf", "no_uf", "nome"],
         uf_cols,
@@ -265,7 +266,7 @@ def get_period_totals(
 def previous_period(year: int, month: int) -> Optional[Tuple[int, int]]:
     if month > 1:
         return year, month - 1
-    if year <= 1:
+    if year <= MIN_VALID_YEAR:
         return None
     return year - 1, 12
 
