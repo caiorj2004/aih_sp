@@ -30,6 +30,15 @@ MIN_VALID_YEAR = 1
 
 _ALLOWED_TABLES = {"aih_qtd", "aih_vl", "municipios_ibge", "unidade_federacao"}
 
+# Expressão SQL que converte a coluna `mes` para INTEGER independentemente de ela
+# armazenar um número ("6") ou uma abreviação de mês em inglês ("Jun").
+_MES_TO_INT = (
+    "CASE WHEN TRIM(q.mes) ~ '^[0-9]+$'"
+    " THEN TRIM(q.mes)::INTEGER"
+    " ELSE EXTRACT(MONTH FROM TO_DATE(TRIM(q.mes), 'Mon'))::INTEGER"
+    " END"
+)
+
 
 # ---------------------------------------------------------------------------
 # Conexão
@@ -165,7 +174,7 @@ def load_filter_options() -> Tuple[List[int], List[int], pd.DataFrame]:
     query = f"""
         SELECT DISTINCT
             CAST(TRIM(q.ano) AS INTEGER)              AS ano,
-            CAST(TRIM(q.mes) AS INTEGER)              AS mes,
+            ({_MES_TO_INT})                           AS mes,
             CAST(m.uf_codigo AS TEXT)                 AS uf_codigo,
             CAST(u.{mapping['uf_name_col']} AS TEXT)  AS uf_nome
         FROM aih_qtd q
@@ -235,7 +244,7 @@ def load_consolidated_data(
 
     params: Dict[str, object] = {}
     year_filter = _build_in_clause("CAST(TRIM(q.ano) AS INTEGER)", selected_years, "ano", params)
-    month_filter = _build_in_clause("CAST(TRIM(q.mes) AS INTEGER)", selected_months, "mes", params)
+    month_filter = _build_in_clause(f"({_MES_TO_INT})", selected_months, "mes", params)
     uf_filter = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", params)
     municipio_filter = _build_in_clause(
         f"CAST(m.{mapping['municipio_code_col']} AS TEXT)", selected_municipios, "mun", params
@@ -244,7 +253,7 @@ def load_consolidated_data(
     query = f"""
         SELECT
             CAST(TRIM(q.ano) AS INTEGER)                            AS ano,
-            CAST(TRIM(q.mes) AS INTEGER)                            AS mes,
+            ({_MES_TO_INT})                                         AS mes,
             CAST(q.cod_municipio AS TEXT)                           AS cod_municipio,
             CAST(m.{mapping['municipio_name_col']} AS TEXT)         AS municipio_nome,
             CAST(m.uf_codigo AS TEXT)                               AS uf_codigo,
@@ -307,7 +316,7 @@ def get_period_totals(
             AND v.cod_municipio = q.cod_municipio
         JOIN municipios_ibge m ON m.{mapping['municipio_code_col']} = q.cod_municipio
         WHERE CAST(TRIM(q.ano) AS INTEGER) = :year
-          AND CAST(TRIM(q.mes) AS INTEGER) = :month
+          AND ({_MES_TO_INT}) = :month
           {uf_filter}
           {municipio_filter}
     """
