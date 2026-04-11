@@ -8,6 +8,8 @@ import streamlit as st
 
 st.set_page_config(page_title="Dashboard AIH SUS", page_icon="📊", layout="wide")
 
+BR_CURRENCY_TRANS = str.maketrans({",": ".", ".": ","})
+
 
 @st.cache_resource
 def get_db_connection():
@@ -266,8 +268,7 @@ def previous_period(year: int, month: int) -> Tuple[int, int]:
 
 
 def format_currency(value: float) -> str:
-    br_map = str.maketrans({",": ".", ".": ","})
-    return f"R$ {value:,.2f}".translate(br_map)
+    return f"R$ {value:,.2f}".translate(BR_CURRENCY_TRANS)
 
 
 def format_delta(current: float, previous: float) -> Optional[str]:
@@ -275,6 +276,10 @@ def format_delta(current: float, previous: float) -> Optional[str]:
         return None
     delta = ((current - previous) / previous) * 100
     return f"{delta:+.2f}%"
+
+
+def calculate_average_ticket(total_value: float, total_quantity: float) -> float:
+    return (total_value / total_quantity) if total_quantity else 0.0
 
 
 st.title("📊 Dashboard AIH SUS (DATASUS)")
@@ -373,8 +378,8 @@ prev_qtd, prev_vl = get_period_totals(
 
 kpi_total_qtd = float(df["total_qtd"].sum())
 kpi_total_vl = float(df["total_vl"].sum())
-kpi_ticket_medio = (kpi_total_vl / kpi_total_qtd) if kpi_total_qtd else 0.0
-current_ticket_medio = (current_vl / current_qtd) if current_qtd else 0.0
+kpi_ticket_medio = calculate_average_ticket(kpi_total_vl, kpi_total_qtd)
+current_ticket_medio = calculate_average_ticket(current_vl, current_qtd)
 
 kpi1, kpi2, kpi3 = st.columns(3)
 kpi1.metric(
@@ -388,7 +393,7 @@ kpi2.metric(
     delta=format_delta(current_vl, prev_vl),
 )
 
-prev_ticket = (prev_vl / prev_qtd) if prev_qtd else 0.0
+prev_ticket = calculate_average_ticket(prev_vl, prev_qtd)
 kpi3.metric(
     "Valor Médio por Procedimento",
     format_currency(kpi_ticket_medio),
