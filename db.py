@@ -170,7 +170,7 @@ def load_filter_options() -> Tuple[List[int], List[int], pd.DataFrame]:
             CAST(u.{mapping['uf_name_col']} AS TEXT)  AS uf_nome
         FROM aih_qtd q
         JOIN municipios_ibge m   ON m.{mapping['municipio_code_col']} = q.cod_municipio
-        JOIN unidade_federacao u ON u.co_uf_prova   = m.uf_codigo
+        JOIN unidade_federacao u ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)
     """
     options_df = conn.query(query, ttl=1800)
 
@@ -258,7 +258,7 @@ def load_consolidated_data(
             AND v.mes          = q.mes
             AND v.cod_municipio = q.cod_municipio
         JOIN municipios_ibge m   ON m.{mapping['municipio_code_col']} = q.cod_municipio
-        JOIN unidade_federacao u ON u.co_uf_prova   = m.uf_codigo
+        JOIN unidade_federacao u ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)
         WHERE 1=1
         {year_filter}
         {month_filter}
