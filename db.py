@@ -106,17 +106,21 @@ def get_table_columns(table_name: str) -> List[str]:
 @st.cache_data(ttl=3600)
 def get_dimension_mapping() -> Dict[str, str]:
     """
-    Detecta automaticamente os nomes das colunas de descrição de município e UF
-    com base nas colunas presentes no banco. Usa fallback seguro caso não encontre.
+    Retorna o mapeamento de colunas de dimensão do banco de dados.
+
+    Colunas de join conhecidas (fixas):
+      - municipios_ibge.codigo_municipio  ↔  aih_qtd/aih_vl.cod_municipio
+      - municipios_ibge.uf_codigo         ↔  unidade_federacao.co_uf_prova
+
+    A coluna de nome do município e a coluna de nome da UF são detectadas
+    dinamicamente pois podem variar conforme a carga do banco.
     """
     municipio_cols = get_table_columns("municipios_ibge")
     uf_cols = get_table_columns("unidade_federacao")
 
-    municipio_code_col = _first_existing(
-        ["cod_municipio", "co_municipio", "codigo_municipio", "id_municipio"],
-        municipio_cols,
-        municipio_cols[0] if municipio_cols else "cod_municipio",
-    )
+    # Coluna de join fixa: municipios_ibge → aih_qtd/aih_vl
+    municipio_code_col = "codigo_municipio"
+
     municipio_name_col = _first_existing(
         ["nome_municipio", "no_municipio", "municipio", "nome"],
         municipio_cols,
