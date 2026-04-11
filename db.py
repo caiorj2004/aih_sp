@@ -122,7 +122,7 @@ def get_table_columns(table_name: str) -> List[str]:
         "WHERE table_schema = 'public' AND table_name = :table_name "
         "ORDER BY ordinal_position"
     )
-    result = conn.query(query, params={"table_name": table_name}, ttl=3600)
+    result = conn.query(query, params={"table_name": table_name})
     return result["column_name"].tolist() if not result.empty else []
 
 
@@ -203,7 +203,7 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
         JOIN municipios_ibge m   ON m.{mapping['municipio_code_col']} = q.cod_municipio
         JOIN unidade_federacao u ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)
     """
-    options_df = conn.query(query, ttl=1800)
+    options_df = conn.query(query)
 
     years = sorted(options_df["ano"].dropna().unique().tolist())
     months = sorted(options_df["mes"].dropna().unique().tolist(), key=month_to_num)
@@ -238,7 +238,7 @@ def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
         {uf_filter}
         ORDER BY municipio_nome, cod_municipio
     """
-    return conn.query(query, params=params, ttl=1800)
+    return conn.query(query, params=params)
 
 
 @st.cache_data(ttl=900)
@@ -303,7 +303,7 @@ def load_consolidated_data(
         ORDER BY ano, mes, uf_nome, municipio_nome
     """
 
-    df = conn.query(query, params=params, ttl=900)
+    df = conn.query(query, params=params)
 
     if not df.empty:
         df["total_qtd"] = pd.to_numeric(df["total_qtd"], errors="coerce").fillna(0)
@@ -347,7 +347,7 @@ def get_period_totals(
           {uf_filter}
           {municipio_filter}
     """
-    result = conn.query(query, params=params, ttl=900)
+    result = conn.query(query, params=params)
     if result.empty:
         return 0.0, 0.0
 

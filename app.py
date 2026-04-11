@@ -300,7 +300,7 @@ with tab_charts:
     # 3. Scatter Plot
     st.subheader("3) Scatter Plot (Procedimentos x Valor)")
     scatter_df = (
-        df.groupby(["cod_municipio", "municipio_nome"], as_index=False)[["total_qtd", "total_vl"]]
+        df.groupby(["cod_municipio", "municipio_nome", "uf_nome"], as_index=False)[["total_qtd", "total_vl"]]
         .sum()
         .sort_values("total_vl", ascending=False)
     )
