@@ -1,0 +1,10 @@
+[theme]
+primaryColor        = "#0066CC"
+backgroundColor     = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor           = "#1A1A2E"
+font                = "sans serif"
+
+[server]
+# Desativa a telemetria de uso do Streamlit
+enableStatistics    = false
