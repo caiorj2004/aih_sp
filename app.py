@@ -9,6 +9,7 @@ import streamlit as st
 st.set_page_config(page_title="Dashboard AIH SUS", page_icon="📊", layout="wide")
 
 BR_CURRENCY_TRANS = str.maketrans({",": ".", ".": ","})
+EPSILON = 1e-9
 
 
 @st.cache_resource
@@ -264,7 +265,7 @@ def get_period_totals(
 def previous_period(year: int, month: int) -> Tuple[int, int]:
     if month > 1:
         return year, month - 1
-    return year - 1, 12
+    return max(year - 1, 1), 12
 
 
 def format_currency(value: float) -> str:
@@ -272,14 +273,14 @@ def format_currency(value: float) -> str:
 
 
 def format_delta(current: float, previous: float) -> Optional[str]:
-    if previous == 0:
+    if abs(previous) < EPSILON:
         return None
     delta = ((current - previous) / previous) * 100
     return f"{delta:+.2f}%"
 
 
 def calculate_average_ticket(total_value: float, total_quantity: float) -> float:
-    return (total_value / total_quantity) if total_quantity else 0.0
+    return (total_value / total_quantity) if abs(total_quantity) >= EPSILON else 0.0
 
 
 st.title("📊 Dashboard AIH SUS (DATASUS)")
