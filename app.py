@@ -69,6 +69,7 @@ def get_dimension_mapping() -> Dict[str, str]:
         municipio_cols,
         "cod_municipio",
     )
+    # O enunciado define `co_uf_prova` como chave primária da tabela de UF.
     uf_name_col = first_existing(
         ["sigla_uf", "sg_uf", "uf", "nome_uf", "no_uf", "nome"],
         uf_cols,
