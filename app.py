@@ -78,7 +78,7 @@ if not years or not months:
 with st.sidebar:
     st.header("Filtros")
 
-    selected_years = st.multiselect("Ano", options=years, default=[max(years)])
+    selected_years = st.multiselect("Ano", options=years, default=years)
 
     selected_months = st.multiselect(
         "Mês",
@@ -87,7 +87,7 @@ with st.sidebar:
     )
 
     uf_label_to_code = {
-        f"{row.uf_nome} ({row.uf_codigo})": row.uf_codigo
+        f"{row.uf_sigla} — {row.uf_nome}": row.uf_codigo
         for row in uf_options.itertuples(index=False)
     }
     selected_uf_labels = st.multiselect(
@@ -209,12 +209,19 @@ with tab_raw:
 # ── B) Estatísticas Descritivas ───────────────────────────────────────────────
 with tab_kpis:
     st.subheader("Resumo Estatístico")
-    st.dataframe(df[["total_qtd", "total_vl"]].describe().T, use_container_width=True)
+    qtd_proc_cols, vl_proc_cols = get_procedure_columns()
+    all_metric_cols = (
+        ["total_qtd", "total_vl"]
+        + [c for c in qtd_proc_cols if c in df.columns]
+        + [c for c in vl_proc_cols if c in df.columns]
+    )
+    stats_df = df[all_metric_cols].apply(pd.to_numeric, errors="coerce")
+    st.dataframe(stats_df.describe().T, use_container_width=True)
 
     st.markdown("**Indicadores de referência do recorte atual:**")
     c1, c2, c3 = st.columns(3)
-    c1.write(f"- Municípios no recorte: **{df['cod_municipio'].nunique()}**")
-    c2.write(f"- UFs no recorte: **{df['uf_codigo'].nunique()}**")
+    c1.write(f"- Municípios no recorte: **{df['municipio_nome'].nunique()}**")
+    c2.write(f"- UFs no recorte: **{df['uf_nome'].nunique()}**")
     c3.write(f"- Períodos no recorte: **{df[['ano', 'mes']].drop_duplicates().shape[0]}**")
 
 # ── C) Gráficos Analíticos ────────────────────────────────────────────────────
@@ -269,7 +276,7 @@ with tab_charts:
             .sort_values(rank_metric, ascending=False)
             .head(10)
         )
-        x_col, y_col = rank_metric, "municipio_nome"
+        cat_col = "municipio_nome"
     else:
         ranking = (
             df.groupby("uf_nome", as_index=False)[rank_metric]
@@ -277,13 +284,17 @@ with tab_charts:
             .sort_values(rank_metric, ascending=False)
             .head(10)
         )
-        x_col, y_col = rank_metric, "uf_nome"
+        cat_col = "uf_nome"
 
+    metric_label = "Valor (R$)" if rank_metric == "total_vl" else "Quantidade"
     fig_rank = px.bar(
-        ranking.sort_values(rank_metric, ascending=True),
-        x=x_col, y=y_col, orientation="h",
-        labels={x_col: "Valor" if rank_metric == "total_vl" else "Quantidade", y_col: ""},
+        ranking.sort_values(rank_metric, ascending=False),
+        x=cat_col,
+        y=rank_metric,
+        labels={cat_col: "", rank_metric: metric_label},
+        text_auto=True,
     )
+    fig_rank.update_layout(xaxis_tickangle=-40)
     st.plotly_chart(fig_rank, use_container_width=True)
 
     # 3. Scatter Plot
@@ -296,7 +307,7 @@ with tab_charts:
     fig_scatter = px.scatter(
         scatter_df,
         x="total_qtd", y="total_vl",
-        hover_data=["cod_municipio", "municipio_nome"],
+        hover_data=["municipio_nome", "uf_nome"],
         labels={"total_qtd": "Volume de Procedimentos", "total_vl": "Valor Aprovado (R$)"},
     )
     st.plotly_chart(fig_scatter, use_container_width=True)

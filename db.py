@@ -149,16 +149,23 @@ def get_dimension_mapping() -> Dict[str, str]:
         municipio_cols,
         municipio_code_col,
     )
-    # `co_uf_prova` é a chave primária/de ligação da tabela unidade_federacao
-    uf_name_col = _first_existing(
-        ["sigla_uf", "sg_uf", "uf", "nome_uf", "no_uf", "nome"],
+    # Coluna de sigla/abreviação da UF (ex.: "SP", "RJ")
+    uf_sigla_col = _first_existing(
+        ["sg_uf_prova", "sg_uf", "sigla_uf"],
         uf_cols,
         "co_uf_prova",
+    )
+    # Coluna de nome completo da UF; cai na sigla se não encontrar nome completo
+    uf_name_col = _first_existing(
+        ["no_uf", "nome_uf", "nome_estado", "nome"],
+        uf_cols,
+        uf_sigla_col,
     )
 
     return {
         "municipio_code_col": municipio_code_col,
         "municipio_name_col": municipio_name_col,
+        "uf_sigla_col": uf_sigla_col,
         "uf_name_col": uf_name_col,
     }
 
@@ -187,10 +194,11 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
 
     query = f"""
         SELECT DISTINCT
-            TRIM(q.ano)                               AS ano,
-            TRIM(q.mes)                               AS mes,
-            CAST(m.uf_codigo AS TEXT)                 AS uf_codigo,
-            CAST(u.{mapping['uf_name_col']} AS TEXT)  AS uf_nome
+            TRIM(q.ano)                                AS ano,
+            TRIM(q.mes)                                AS mes,
+            CAST(m.uf_codigo AS TEXT)                  AS uf_codigo,
+            CAST(u.{mapping['uf_sigla_col']} AS TEXT)  AS uf_sigla,
+            CAST(u.{mapping['uf_name_col']} AS TEXT)   AS uf_nome
         FROM aih_qtd q
         JOIN municipios_ibge m   ON m.{mapping['municipio_code_col']} = q.cod_municipio
         JOIN unidade_federacao u ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)
@@ -200,9 +208,9 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
     years = sorted(options_df["ano"].dropna().unique().tolist())
     months = sorted(options_df["mes"].dropna().unique().tolist(), key=month_to_num)
     uf_df = (
-        options_df[["uf_codigo", "uf_nome"]]
+        options_df[["uf_codigo", "uf_sigla", "uf_nome"]]
         .drop_duplicates()
-        .sort_values(["uf_nome", "uf_codigo"])
+        .sort_values(["uf_sigla", "uf_codigo"])
     )
 
     return years, months, uf_df
@@ -249,6 +257,10 @@ def load_consolidated_data(
     mapping = get_dimension_mapping()
     qtd_proc_cols, vl_proc_cols = get_procedure_columns()
 
+    # Retorno rápido para evitar query sem filtros de período
+    if not selected_years or not selected_months:
+        return pd.DataFrame()
+
     # Monta as colunas de procedimentos dinamicamente
     qtd_sql = ",\n            ".join([f"q.{col} AS {col}" for col in qtd_proc_cols])
     vl_sql = ",\n            ".join([f"v.{col} AS {col}" for col in vl_proc_cols])
@@ -271,6 +283,7 @@ def load_consolidated_data(
             CAST(q.cod_municipio AS TEXT)                           AS cod_municipio,
             CAST(m.{mapping['municipio_name_col']} AS TEXT)         AS municipio_nome,
             CAST(m.uf_codigo AS TEXT)                               AS uf_codigo,
+            CAST(u.{mapping['uf_sigla_col']} AS TEXT)               AS uf_sigla,
             CAST(u.{mapping['uf_name_col']} AS TEXT)                AS uf_nome,
             COALESCE(q.total, 0)                                    AS total_qtd,
             COALESCE(v.total, 0)                                    AS total_vl
