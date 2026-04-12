@@ -230,7 +230,7 @@ with tab_intro:
         - **KPIs em tempo real** com delta em relação ao período imediatamente anterior
         - **Lista dos dados** com export para CSV
         - **Estatísticas descritivas** (média, desvio padrão, percentis) por coluna
-        - **Gráficos analíticos**: série temporal, ranking Top 10, scatter plot e donut por categoria de procedimento
+        - **Gráficos analíticos**: série temporal, ranking Top 10, scatter plot e treemap por categoria de procedimento
         """
     )
 
@@ -255,7 +255,7 @@ with tab_intro:
         - Uma faixa de aviso ⚠️ é exibida na barra lateral para informar que o painel
           está em modo offline.
 
-        Os demais recursos — série temporal, donut por categoria, KPIs com delta e
+        Os demais recursos — série temporal, treemap por categoria, KPIs com delta e
         export para CSV — funcionam normalmente.
         """
     )

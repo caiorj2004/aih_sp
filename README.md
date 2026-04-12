@@ -55,5 +55,5 @@ streamlit run app.py
 - Filtros hierárquicos por Ano, Mês, UF e Município
 - JOIN entre `aih_qtd`, `aih_vl`, `municipios_ibge` e `unidade_federacao`
 - KPIs com delta de variação frente ao período anterior
-- Visualizações interativas (linha, ranking, dispersão e donut)
+- Visualizações interativas (linha, ranking, dispersão e treemap)
 - Exportação dos dados filtrados em CSV
