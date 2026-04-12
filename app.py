@@ -875,3 +875,131 @@ with tab_charts:
                     st.info("Selecione ao menos uma coluna para exibir o treemap.")
             else:
                 st.info("Não foram encontradas colunas de categorias de procedimento no recorte atual.")
+
+            # 5. Heatmap Sazonal
+            st.subheader("5) Heatmap Sazonal")
+            st.caption(
+                "Mapa de calor mês × ano (ou mês × UF) para identificar sazonalidade e quebras de padrão histórico."
+            )
+            _MONTH_ABBR_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+                               "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+            hm_c1, hm_c2 = st.columns(2)
+            with hm_c1:
+                hm_metric = st.selectbox(
+                    "Métrica",
+                    options=avail_qtd_cols + [c for c in avail_vl_cols if c not in avail_qtd_cols],
+                    format_func=col_label,
+                    key="hm_metric",
+                )
+            with hm_c2:
+                _hm_y_opts = ["Ano"]
+                if not _using_fallback:
+                    _hm_y_opts.append("UF")
+                hm_y_axis = st.radio(
+                    "Eixo Y",
+                    options=_hm_y_opts,
+                    horizontal=True,
+                    key="hm_y_axis",
+                )
+
+            _hm_df = df_all.copy()
+            _hm_df["_mes_num"] = _hm_df["mes"].apply(month_to_num)
+            _hm_df = _hm_df[_hm_df["_mes_num"] > 0].copy()
+            _hm_df["_mes_abbr"] = _hm_df["_mes_num"].apply(
+                lambda n: _MONTH_ABBR_PT[n - 1] if 1 <= n <= 12 else str(n)
+            )
+
+            if hm_y_axis == "UF" and not _using_fallback:
+                _hm_group_col = "uf_nome"
+            else:
+                _hm_group_col = "ano"
+
+            _hm_pivot = (
+                _hm_df.groupby([_hm_group_col, "_mes_num", "_mes_abbr"], as_index=False)[hm_metric]
+                .sum()
+                .pivot_table(index=_hm_group_col, columns="_mes_num", values=hm_metric, aggfunc="sum")
+            )
+            # Ensure full 12-column month order; fill missing months with 0
+            _hm_pivot = _hm_pivot.reindex(columns=range(1, 13), fill_value=0)
+            _hm_pivot.columns = _MONTH_ABBR_PT
+
+            fig_heatmap = go.Figure(
+                go.Heatmap(
+                    z=_hm_pivot.values,
+                    x=_MONTH_ABBR_PT,
+                    y=[str(v) for v in _hm_pivot.index],
+                    colorscale="YlOrRd",
+                    hovertemplate="%{y} — %{x}: %{z:,.0f}<extra></extra>",
+                )
+            )
+            fig_heatmap.update_layout(
+                xaxis_title="Mês",
+                yaxis_title=hm_y_axis,
+                margin=dict(l=10, r=10, t=20, b=10),
+            )
+            st.plotly_chart(fig_heatmap, use_container_width=True)
+
+            # 6. Box Plot — Ticket Médio por UF / Município
+            st.subheader("6) Box Plot — Ticket Médio por UF / Município")
+            st.caption(
+                "Distribuição do ticket médio (Valor Total / Qtd de Procedimentos) por município, "
+                "agrupada por UF. Pontos isolados acima da caixa indicam custo fora do padrão estadual."
+            )
+            _bp_df = df_all.copy()
+            _bp_df["_ticket"] = (
+                pd.to_numeric(_bp_df["total_vl"], errors="coerce")
+                / pd.to_numeric(_bp_df["total_qtd"], errors="coerce").replace(0, float("nan"))
+            )
+            _bp_df = _bp_df[_bp_df["_ticket"].notna() & (_bp_df["_ticket"] > 0)].copy()
+
+            if _bp_df.empty:
+                st.info("Sem dados suficientes para exibir o Box Plot com os filtros atuais.")
+            else:
+                if _using_fallback:
+                    _bp_group = "municipio_nome"
+                    _bp_label = "Município"
+                    # Use all municipalities; sort by median descending
+                    _bp_order = (
+                        _bp_df.groupby(_bp_group)["_ticket"]
+                        .median()
+                        .sort_values(ascending=False)
+                        .index.tolist()
+                    )
+                    fig_box = px.box(
+                        _bp_df,
+                        x=_bp_group,
+                        y="_ticket",
+                        category_orders={_bp_group: _bp_order},
+                        labels={_bp_group: _bp_label, "_ticket": "Ticket Médio (R$/proc)"},
+                        points="outliers",
+                    )
+                else:
+                    _bp_group = "uf_nome"
+                    _bp_label = "UF"
+                    _bp_order = (
+                        _bp_df.groupby(_bp_group)["_ticket"]
+                        .median()
+                        .sort_values(ascending=False)
+                        .index.tolist()
+                    )
+                    fig_box = px.box(
+                        _bp_df,
+                        x=_bp_group,
+                        y="_ticket",
+                        hover_data=["municipio_nome"],
+                        category_orders={_bp_group: _bp_order},
+                        labels={_bp_group: _bp_label, "_ticket": "Ticket Médio (R$/proc)"},
+                        points="outliers",
+                    )
+                fig_box.update_layout(
+                    xaxis_tickangle=-40,
+                    yaxis_title="Ticket Médio (R$/proc)",
+                    margin=dict(l=10, r=10, t=20, b=10),
+                )
+                st.plotly_chart(fig_box, use_container_width=True)
+                st.caption(
+                    "**Como ler:** A caixa central representa o intervalo interquartil (P25–P75). "
+                    "A linha interna é a mediana. Pontos fora das hastes são outliers — "
+                    "municípios com custo médio estatisticamente fora do padrão estadual."
+                )
