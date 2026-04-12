@@ -409,8 +409,8 @@ def load_consolidated_data(
             TRIM(q.ano)                   AS ano,
             TRIM(q.mes)                   AS mes,
             CAST(q.cod_municipio AS TEXT) AS cod_municipio,
-            COALESCE(q.total, 0)          AS total_qtd,
-            COALESCE(v.total, 0)          AS total_vl
+            q.total                       AS total_qtd,
+            v.total                       AS total_vl
             {extra_cols}
         FROM aih_qtd q
         JOIN aih_vl v
@@ -431,8 +431,8 @@ def load_consolidated_data(
     # Combina dados de fato com dados de dimensão via merge em Python
     # ------------------------------------------------------------------
     df = fact_df.merge(dim_df, on="cod_municipio", how="left")
-    df["total_qtd"] = pd.to_numeric(df["total_qtd"], errors="coerce").fillna(0)
-    df["total_vl"] = pd.to_numeric(df["total_vl"], errors="coerce").fillna(0)
+    df["total_qtd"] = pd.to_numeric(df["total_qtd"], errors="coerce")
+    df["total_vl"] = pd.to_numeric(df["total_vl"], errors="coerce")
 
     return df.sort_values(["ano", "mes", "uf_nome", "municipio_nome"]).reset_index(drop=True)
 

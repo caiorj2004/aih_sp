@@ -127,8 +127,8 @@ def load_fallback_consolidated(
     )
 
     df = qtd_sel.merge(vl_sel, on=merge_keys, how="left")
-    df["total_qtd"] = pd.to_numeric(df["total_qtd"], errors="coerce").fillna(0)
-    df["total_vl"] = pd.to_numeric(df["total_vl"], errors="coerce").fillna(0)
+    df["total_qtd"] = pd.to_numeric(df["total_qtd"], errors="coerce")
+    df["total_vl"] = pd.to_numeric(df["total_vl"], errors="coerce")
 
     df["_mes_num"] = df["mes"].apply(month_to_num)
     return (

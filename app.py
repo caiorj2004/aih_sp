@@ -285,6 +285,8 @@ _years: list = []
 _months: list = []
 _uf_options = None
 _fb_municipios: Optional[pd.DataFrame] = None
+_fb_years: list = []
+_fb_months: list = []
 
 try:
     _years, _months, _uf_options = load_filter_options()
@@ -297,6 +299,13 @@ except Exception as exc:
     except Exception:
         pass  # both DB and fallback unavailable
 
+# Pre-load fallback options when DB is available so the connection toggle works
+if _db_error is None:
+    try:
+        _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
+    except Exception:
+        pass  # fallback files unavailable; toggle will be hidden
+
 # ---------------------------------------------------------------------------
 # Sidebar — Filtros (DB ou Fallback)
 # ---------------------------------------------------------------------------
@@ -305,9 +314,20 @@ selected_months: list = []
 selected_ufs: tuple = ()
 selected_municipios: tuple = ()
 
-if _using_fallback and _fb_municipios is not None:
-    with st.sidebar:
-        st.warning("⚠️ **Modo Offline** — banco indisponível.\nExibindo dados locais (Parquet).")
+with st.sidebar:
+    # Connection mode toggle: shown only when DB is available AND local data exists
+    if _db_error is None and _fb_municipios is not None:
+        if st.toggle("📁 Usar dados locais (Parquet)", key="use_local"):
+            _using_fallback = True
+            _years = _fb_years
+            _months = _fb_months
+        st.divider()
+
+    if _using_fallback and _fb_municipios is not None:
+        if _db_error is not None:
+            st.warning("⚠️ **Modo Offline** — banco indisponível.\nExibindo dados locais (Parquet).")
+        else:
+            st.info("📁 Exibindo dados locais (Parquet).")
         st.header("Filtros")
 
         selected_years = st.multiselect("Ano", options=_years, default=_years)
@@ -330,8 +350,7 @@ if _using_fallback and _fb_municipios is not None:
         if not selected_municipios:
             st.warning("⚠️ Selecione ao menos um município para o funcionamento do app.")
 
-elif _db_error is None and _years and _months and _uf_options is not None:
-    with st.sidebar:
+    elif _db_error is None and _years and _months and _uf_options is not None:
         st.header("Filtros")
 
         selected_years = st.multiselect("Ano", options=_years, default=_years)
