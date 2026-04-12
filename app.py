@@ -50,6 +50,16 @@ def format_currency(value: float) -> str:
     return f"R$ {value:,.2f}".translate(BR_CURRENCY_TRANS)
 
 
+def br_format(value, decimals: int = 0) -> str:
+    """Format a number using Brazilian locale (. thousands, , decimal)."""
+    if pd.isna(value):
+        return ""
+    try:
+        return f"{float(value):,.{decimals}f}".translate(BR_CURRENCY_TRANS)
+    except (ValueError, TypeError):
+        return str(value)
+
+
 def format_delta(current: float, previous: float) -> Optional[str]:
     if abs(previous) < 1e-9:
         return None
@@ -470,7 +480,13 @@ with tab_raw:
             _df_display = _df_display.sort_values(["ano", "_mes_num", "municipio_nome"]).drop(
                 columns=["_mes_num"]
             )
-            st.dataframe(_df_display, use_container_width=True)
+            _df_display_fmt = _df_display.copy()
+            for _col in _df_display_fmt.select_dtypes(include="number").columns:
+                if _col == "ano":
+                    continue
+                _decimals = 2 if (_col.startswith("vl_") or _col == "total_vl") else 0
+                _df_display_fmt[_col] = _df_display_fmt[_col].apply(br_format, decimals=_decimals)
+            st.dataframe(_df_display_fmt, use_container_width=True)
 
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False)
@@ -550,7 +566,8 @@ with tab_kpis:
                 + [c for c in vl_proc_cols if c in df_stats.columns]
             )
             stats_df = df_stats[all_metric_cols].apply(pd.to_numeric, errors="coerce")
-            st.dataframe(stats_df.describe().T, use_container_width=True)
+            _stats_display = stats_df.describe().T.map(lambda v: br_format(v, 2))
+            st.dataframe(_stats_display, use_container_width=True)
 
             st.markdown("**Indicadores de referência do recorte atual:**")
             if _using_fallback:
