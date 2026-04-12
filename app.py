@@ -730,8 +730,10 @@ with tab_charts:
                     labels={scatter_x: col_label(scatter_x), scatter_y: col_label(scatter_y)},
                 )
             st.plotly_chart(fig_scatter, use_container_width=True)
-            _corr_method_key = "pearson" if corr_method == "Pearson" else "spearman"
-            _corr_val = scatter_df[scatter_x].corr(scatter_df[scatter_y], method=_corr_method_key)
+            _CORR_METHOD_MAP = {"Pearson": "pearson", "Spearman": "spearman"}
+            _corr_val = scatter_df[scatter_x].corr(
+                scatter_df[scatter_y], method=_CORR_METHOD_MAP[corr_method]
+            )
             if pd.notna(_corr_val):
                 st.caption(
                     f"Correlação de {corr_method} entre {col_label(scatter_x)} e "
@@ -776,8 +778,9 @@ with tab_charts:
                         .fillna(0)
                         .sum()
                     )
-                    selected_totals = all_col_totals[treemap_selected].sort_values(ascending=False)
-                    outros_value = float(all_col_totals.drop(index=treemap_selected).sum())
+                    valid_selected = [c for c in treemap_selected if c in all_col_totals.index]
+                    selected_totals = all_col_totals[valid_selected].sort_values(ascending=False)
+                    outros_value = float(all_col_totals.drop(index=valid_selected).sum())
                     rows = [(col_label(c), float(v)) for c, v in selected_totals.items()]
                     if outros_value > 0:
                         rows.append(("Outros", outros_value))
