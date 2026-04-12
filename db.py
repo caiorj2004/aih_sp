@@ -204,20 +204,27 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
     Carrega todas as combinações de Ano, Mês e UF disponíveis no banco.
     Usado para popular os filtros da sidebar.
 
-    Usa duas queries leves em vez de um único SELECT DISTINCT com JOIN na tabela
-    fato (aih_qtd), que pode esgotar o espaço temporário do PostgreSQL.
+    Usa três queries leves:
+    - Duas queries de coluna única (ano / mes) em aih_qtd para que o PostgreSQL
+      possa usar índices individuais e evitar ordenação em duas colunas.
+    - Uma query nas tabelas de dimensão para as UFs (tabelas pequenas).
+    O TRIM é feito em Python para não bloquear o uso de índices no banco.
     """
     conn = get_connection()
-    mapping = get_dimension_mapping()
 
-    # 1. Anos e meses: consulta direta na tabela fato sem joins
-    period_df = conn.query(
-        "SELECT DISTINCT TRIM(ano) AS ano, TRIM(mes) AS mes FROM aih_qtd"
+    # 1. Anos: query de coluna única permite uso de índice em 'ano'
+    years_df = conn.query("SELECT DISTINCT ano FROM aih_qtd WHERE ano IS NOT NULL")
+    years = sorted(years_df["ano"].astype(str).str.strip().dropna().unique().tolist())
+
+    # 2. Meses: query de coluna única permite uso de índice em 'mes'
+    months_df = conn.query("SELECT DISTINCT mes FROM aih_qtd WHERE mes IS NOT NULL")
+    months = sorted(
+        months_df["mes"].astype(str).str.strip().dropna().unique().tolist(),
+        key=month_to_num,
     )
-    years = sorted(period_df["ano"].dropna().unique().tolist())
-    months = sorted(period_df["mes"].dropna().unique().tolist(), key=month_to_num)
 
-    # 2. UFs: join apenas entre tabelas de dimensão (muito menores)
+    # 3. UFs: join apenas entre tabelas de dimensão (muito menores)
+    mapping = get_dimension_mapping()
     uf_query = f"""
         SELECT DISTINCT
             CAST(m.uf_codigo AS TEXT)                  AS uf_codigo,
