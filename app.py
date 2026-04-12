@@ -481,6 +481,37 @@ with tab_raw:
                 mime="text/csv",
             )
 
+            # ── Dicionário de variáveis ────────────────────────────────────
+            st.subheader("Dicionário de Variáveis")
+            _meta_rows = [
+                {"Variável": k, "Descrição": v}
+                for k, v in COLUMN_LABELS.items()
+                if k not in ("municipio_nome", "total_qtd", "total_vl")
+            ]
+            # Separar metadados, quantidades e valores em seções distintas
+            _meta_ctrl = [r for r in _meta_rows if not r["Variável"].startswith(("qtd_", "vl_"))]
+            _meta_qtd = [r for r in _meta_rows if r["Variável"].startswith("qtd_")]
+            _meta_vl = [r for r in _meta_rows if r["Variável"].startswith("vl_")]
+
+            st.caption("**Colunas de controle e metadados** (comuns às duas matrizes)")
+            st.dataframe(
+                pd.DataFrame(_meta_ctrl),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption("**Matriz de Quantidades** (`aih_qtd`) — colunas `qtd_*`")
+            st.dataframe(
+                pd.DataFrame(_meta_qtd),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption("**Matriz de Valores Financeiros** (`aih_vl`) — colunas `vl_*`")
+            st.dataframe(
+                pd.DataFrame(_meta_vl),
+                use_container_width=True,
+                hide_index=True,
+            )
+
 # ── B) Estatísticas Descritivas ───────────────────────────────────────────────
 with tab_kpis:
     if not _using_fallback and (_db_error is not None or not _years):
