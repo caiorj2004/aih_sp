@@ -119,6 +119,10 @@ if not selected_years_tuple or not selected_months_tuple:
     st.warning("Selecione ao menos um ano e um mês para continuar.")
     st.stop()
 
+if not selected_ufs:
+    st.info("Selecione ao menos uma **Unidade da Federação (UF)** na barra lateral para carregar os dados.")
+    st.stop()
+
 # ---------------------------------------------------------------------------
 # Carga dos dados consolidados
 # ---------------------------------------------------------------------------
