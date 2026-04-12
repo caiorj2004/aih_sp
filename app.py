@@ -58,6 +58,85 @@ def format_delta(current: float, previous: float) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# Dicionário de labels — baseado no relatório de definição de dados
+# ---------------------------------------------------------------------------
+_PROC_NAMES = {
+    "0101": "Ações coletivas/individuais em saúde",
+    "0201": "Coleta de material",
+    "0202": "Diagnóstico em laboratório clínico",
+    "0203": "Diagnóstico por anatomia patológica e citopatologia",
+    "0204": "Diagnóstico por radiologia",
+    "0205": "Diagnóstico por ultrassonografia",
+    "0206": "Diagnóstico por tomografia",
+    "0207": "Diagnóstico por ressonância magnética",
+    "0208": "Diagnóstico por medicina nuclear in vivo",
+    "0209": "Diagnóstico por endoscopia",
+    "0210": "Diagnóstico por radiologia intervencionista",
+    "0211": "Métodos diagnósticos em especialidades",
+    "0212": "Diagnóstico e procedimentos especiais em hemoterapia",
+    "0213": "Diagnóstico em vigilância epidemiológica e ambiental",
+    "0214": "Diagnóstico por teste rápido",
+    "0301": "Consultas / Atendimentos / Acompanhamentos",
+    "0302": "Fisioterapia",
+    "0303": "Tratamentos clínicos (outras especialidades)",
+    "0304": "Tratamento em oncologia",
+    "0305": "Tratamento em nefrologia",
+    "0306": "Hemoterapia",
+    "0307": "Tratamentos odontológicos",
+    "0308": "Tratamento de lesões, envenenamentos e outros, decorrentes de causas externas",
+    "0309": "Terapias especializadas",
+    "0310": "Parto e nascimento",
+    "0311": "Cuidados paliativos",
+    "0401": "Pequenas cirurgias e cirurgias de pele, tecido subcutâneo e mucosa",
+    "0402": "Cirurgia de glândulas endócrinas",
+    "0403": "Cirurgia do sistema nervoso central e periférico",
+    "0404": "Cirurgia das vias aéreas superiores, da face, da cabeça e do pescoço",
+    "0405": "Cirurgia do aparelho da visão",
+    "0406": "Cirurgia do aparelho circulatório",
+    "0407": "Cirurgia do aparelho digestivo, órgãos anexos e parede abdominal",
+    "0408": "Cirurgia do sistema osteomuscular",
+    "0409": "Cirurgia do aparelho geniturinário",
+    "0410": "Cirurgia de mama",
+    "0411": "Cirurgia obstétrica",
+    "0412": "Cirurgia torácica",
+    "0413": "Cirurgia reparadora",
+    "0414": "Bucomaxilofacial",
+    "0415": "Outras cirurgias",
+    "0416": "Cirurgia em oncologia",
+    "0417": "Anestesiologia",
+    "0418": "Cirurgia em nefrologia",
+    "0501": "Coleta e exames para fins de doação de órgãos, tecidos e células e de transplante",
+    "0502": "Avaliação de morte encefálica",
+    "0503": "Ações relacionadas à doação de órgãos e tecidos para transplante",
+    "0504": "Processamento de tecidos para transplante",
+    "0505": "Transplante de órgãos, tecidos e células",
+    "0506": "Acompanhamento e intercorrências no pré e pós-transplante",
+    "0603": "Medicamentos de âmbito hospitalar e urgência",
+    "0702": "Órteses, próteses e materiais especiais relacionados ao ato cirúrgico",
+    "0801": "Ações relacionadas ao estabelecimento",
+    "0802": "Ações relacionadas ao atendimento",
+}
+
+COLUMN_LABELS: dict = {
+    "ano": "Ano de competência",
+    "mes": "Mês de competência",
+    "cod_municipio": "Município (Cód. IBGE)",
+    "municipio": "Município",
+    "municipio_nome": "Município",
+    "total": "Totalizador do período",
+    "total_qtd": "Total de Procedimentos (Qtd)",
+    "total_vl": "Valor Total Repassado (R$)",
+    **{f"qtd_{code}": f"Qtd – {code} {name}" for code, name in _PROC_NAMES.items()},
+    **{f"vl_{code}": f"Vl – {code} {name}" for code, name in _PROC_NAMES.items()},
+}
+
+
+def col_label(col: str) -> str:
+    """Retorna o label legível para uma coluna, usando o dicionário de dados."""
+    return COLUMN_LABELS.get(col, col)
+
+
+# ---------------------------------------------------------------------------
 # Título e descrição
 # ---------------------------------------------------------------------------
 st.title("📊 Dashboard AIH SUS (DATASUS)")
@@ -370,10 +449,14 @@ with tab_raw:
                 format_currency(kpi_ticket_medio),
                 delta=format_delta(current_ticket_medio, prev_ticket),
             )
-            st.caption(delta_caption)
 
             st.subheader("Dados consolidados após filtros")
-            st.dataframe(df, use_container_width=True)
+            _df_display = df.copy()
+            _df_display["_mes_num"] = _df_display["mes"].apply(month_to_num)
+            _df_display = _df_display.sort_values(["ano", "_mes_num", "municipio_nome"]).drop(
+                columns=["_mes_num"]
+            )
+            st.dataframe(_df_display, use_container_width=True)
 
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False)
@@ -461,10 +544,32 @@ with tab_charts:
         else:
             df = df_charts  # alias for chart code below
 
+            # Colunas de procedimento disponíveis no recorte atual
+            qtd_proc_cols, vl_proc_cols = (
+                get_fallback_procedure_columns() if _using_fallback else get_procedure_columns()
+            )
+            avail_qtd_cols = ["total_qtd"] + [c for c in qtd_proc_cols if c in df.columns]
+            avail_vl_cols = ["total_vl"] + [c for c in vl_proc_cols if c in df.columns]
+
             # 1. Série temporal
-            st.subheader("1) Série temporal (Quantidade x Valor)")
+            st.subheader("1) Série temporal")
+            ts_c1, ts_c2 = st.columns(2)
+            with ts_c1:
+                serie_qtd_col = st.selectbox(
+                    "Eixo esquerdo (Quantidade)",
+                    options=avail_qtd_cols,
+                    format_func=col_label,
+                    key="serie_qtd",
+                )
+            with ts_c2:
+                serie_vl_col = st.selectbox(
+                    "Eixo direito (Valor)",
+                    options=avail_vl_cols,
+                    format_func=col_label,
+                    key="serie_vl",
+                )
             series = (
-                df.groupby(["ano", "mes"], as_index=False)[["total_qtd", "total_vl"]]
+                df.groupby(["ano", "mes"], as_index=False)[[serie_qtd_col, serie_vl_col]]
                 .sum()
             )
             series["_mes_num"] = series["mes"].apply(month_to_num)
@@ -478,19 +583,19 @@ with tab_charts:
             fig_line = go.Figure()
             fig_line.add_trace(
                 go.Scatter(
-                    x=series["periodo"], y=series["total_qtd"],
-                    mode="lines+markers", name="Quantidade Total", yaxis="y1",
+                    x=series["periodo"], y=series[serie_qtd_col],
+                    mode="lines+markers", name=col_label(serie_qtd_col), yaxis="y1",
                 )
             )
             fig_line.add_trace(
                 go.Scatter(
-                    x=series["periodo"], y=series["total_vl"],
-                    mode="lines+markers", name="Valor Total", yaxis="y2",
+                    x=series["periodo"], y=series[serie_vl_col],
+                    mode="lines+markers", name=col_label(serie_vl_col), yaxis="y2",
                 )
             )
             fig_line.update_layout(
-                yaxis=dict(title="Quantidade"),
-                yaxis2=dict(title="Valor (R$)", overlaying="y", side="right"),
+                yaxis=dict(title=col_label(serie_qtd_col)),
+                yaxis2=dict(title=col_label(serie_vl_col), overlaying="y", side="right"),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
@@ -499,16 +604,17 @@ with tab_charts:
             # 2. Ranking Top 10
             st.subheader("2) Ranking Top 10")
             if _using_fallback:
-                # Sem colunas de UF no fallback — apenas nível Município disponível
                 rank_level = "Município"
                 st.caption("ℹ️ Dados locais não possuem informação de UF. Ranking disponível apenas por Município.")
             else:
                 rank_level = st.radio("Nível do ranking", ["Município", "UF"], horizontal=True)
 
+            all_rank_cols = avail_qtd_cols + [c for c in avail_vl_cols if c not in avail_qtd_cols]
             rank_metric = st.selectbox(
                 "Métrica",
-                options=["total_vl", "total_qtd"],
-                format_func=lambda c: "Valor Total" if c == "total_vl" else "Quantidade Total",
+                options=all_rank_cols,
+                format_func=col_label,
+                key="rank_metric",
             )
 
             if rank_level == "Município":
@@ -528,77 +634,95 @@ with tab_charts:
                 )
                 cat_col = "uf_nome"
 
-            metric_label = "Valor (R$)" if rank_metric == "total_vl" else "Quantidade"
             fig_rank = px.bar(
                 ranking.sort_values(rank_metric, ascending=False),
                 x=cat_col,
                 y=rank_metric,
-                labels={cat_col: "", rank_metric: metric_label},
+                labels={cat_col: "", rank_metric: col_label(rank_metric)},
                 text_auto=True,
             )
             fig_rank.update_layout(xaxis_tickangle=-40)
             st.plotly_chart(fig_rank, use_container_width=True)
 
             # 3. Scatter Plot
-            st.subheader("3) Scatter Plot (Procedimentos x Valor)")
+            st.subheader("3) Scatter Plot")
+            sc_c1, sc_c2 = st.columns(2)
+            with sc_c1:
+                scatter_x = st.selectbox(
+                    "Eixo X (Quantidade)",
+                    options=avail_qtd_cols,
+                    format_func=col_label,
+                    key="scatter_x",
+                )
+            with sc_c2:
+                scatter_y = st.selectbox(
+                    "Eixo Y (Valor)",
+                    options=avail_vl_cols,
+                    format_func=col_label,
+                    key="scatter_y",
+                )
             if _using_fallback:
                 scatter_df = (
-                    df.groupby(["cod_municipio", "municipio_nome"], as_index=False)[["total_qtd", "total_vl"]]
+                    df.groupby(["cod_municipio", "municipio_nome"], as_index=False)[[scatter_x, scatter_y]]
                     .sum()
-                    .sort_values("total_vl", ascending=False)
+                    .sort_values(scatter_y, ascending=False)
                 )
                 fig_scatter = px.scatter(
                     scatter_df,
-                    x="total_qtd", y="total_vl",
+                    x=scatter_x, y=scatter_y,
                     hover_data=["municipio_nome"],
-                    labels={"total_qtd": "Volume de Procedimentos", "total_vl": "Valor Aprovado (R$)"},
+                    labels={scatter_x: col_label(scatter_x), scatter_y: col_label(scatter_y)},
                 )
             else:
                 scatter_df = (
-                    df.groupby(["cod_municipio", "municipio_nome", "uf_nome"], as_index=False)[["total_qtd", "total_vl"]]
+                    df.groupby(["cod_municipio", "municipio_nome", "uf_nome"], as_index=False)[[scatter_x, scatter_y]]
                     .sum()
-                    .sort_values("total_vl", ascending=False)
+                    .sort_values(scatter_y, ascending=False)
                 )
                 fig_scatter = px.scatter(
                     scatter_df,
-                    x="total_qtd", y="total_vl",
+                    x=scatter_x, y=scatter_y,
                     hover_data=["municipio_nome", "uf_nome"],
-                    labels={"total_qtd": "Volume de Procedimentos", "total_vl": "Valor Aprovado (R$)"},
+                    labels={scatter_x: col_label(scatter_x), scatter_y: col_label(scatter_y)},
                 )
             st.plotly_chart(fig_scatter, use_container_width=True)
 
             # 4. Donut por categorias de procedimento
             st.subheader("4) Donut — Distribuição por categorias de procedimento")
-            qtd_proc_cols, vl_proc_cols = (
-                get_fallback_procedure_columns() if _using_fallback else get_procedure_columns()
-            )
-
             donut_mode = st.selectbox(
                 "Analisar categorias de",
                 options=["Quantidade (qtd_*)", "Valor (vl_*)"],
+                key="donut_mode",
             )
 
             candidate_cols = qtd_proc_cols if donut_mode.startswith("Quantidade") else vl_proc_cols
             available_cols = [col for col in candidate_cols if col in df.columns]
 
             if available_cols:
-                category_totals = (
-                    df[available_cols]
-                    .apply(pd.to_numeric, errors="coerce")
-                    .fillna(0)
-                    .sum()
-                    .sort_values(ascending=False)
-                    .head(10)
+                donut_selected = st.multiselect(
+                    "Colunas a incluir",
+                    options=available_cols,
+                    default=available_cols,
+                    format_func=col_label,
+                    key="donut_cols",
                 )
-                donut_data = pd.DataFrame(
-                    {
-                        "categoria": [
-                            c.replace("qtd_", "").replace("vl_", "") for c in category_totals.index
-                        ],
-                        "valor": category_totals.values,
-                    }
-                )
-                fig_donut = px.pie(donut_data, names="categoria", values="valor", hole=0.45)
-                st.plotly_chart(fig_donut, use_container_width=True)
+                if donut_selected:
+                    category_totals = (
+                        df[donut_selected]
+                        .apply(pd.to_numeric, errors="coerce")
+                        .fillna(0)
+                        .sum()
+                        .sort_values(ascending=False)
+                    )
+                    donut_data = pd.DataFrame(
+                        {
+                            "categoria": [col_label(c) for c in category_totals.index],
+                            "valor": category_totals.values,
+                        }
+                    )
+                    fig_donut = px.pie(donut_data, names="categoria", values="valor", hole=0.45)
+                    st.plotly_chart(fig_donut, use_container_width=True)
+                else:
+                    st.info("Selecione ao menos uma coluna para exibir o donut.")
             else:
                 st.info("Não foram encontradas colunas de categorias de procedimento no recorte atual.")
