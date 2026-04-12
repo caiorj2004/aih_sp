@@ -130,7 +130,12 @@ def load_fallback_consolidated(
     df["total_qtd"] = pd.to_numeric(df["total_qtd"], errors="coerce").fillna(0)
     df["total_vl"] = pd.to_numeric(df["total_vl"], errors="coerce").fillna(0)
 
-    return df.sort_values(["ano", "mes", "municipio_nome"]).reset_index(drop=True)
+    df["_mes_num"] = df["mes"].apply(month_to_num)
+    return (
+        df.sort_values(["ano", "_mes_num", "municipio_nome"])
+        .drop(columns=["_mes_num"])
+        .reset_index(drop=True)
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -508,13 +508,18 @@ with tab_kpis:
             st.markdown("**Indicadores de referência do recorte atual:**")
             if _using_fallback:
                 c1, c2 = st.columns(2)
-                c1.write(f"- Municípios no recorte: **{df_stats['municipio_nome'].nunique()}**")
+                c1.write(f"- Municípios no recorte: **{df_stats['cod_municipio'].nunique()}**")
                 c2.write(f"- Períodos no recorte: **{df_stats[['ano', 'mes']].drop_duplicates().shape[0]}**")
             else:
                 c1, c2, c3 = st.columns(3)
-                c1.write(f"- Municípios no recorte: **{df_stats['municipio_nome'].nunique()}**")
+                c1.write(f"- Municípios no recorte: **{df_stats['cod_municipio'].nunique()}**")
                 c2.write(f"- UFs no recorte: **{df_stats['uf_nome'].nunique()}**")
                 c3.write(f"- Períodos no recorte: **{df_stats[['ano', 'mes']].drop_duplicates().shape[0]}**")
+            st.caption(
+                "ℹ️ A coluna **count** na tabela acima indica o número de registros "
+                "(combinações município‑período) no recorte. "
+                "O **total de procedimentos** é a soma da coluna `total_qtd`."
+            )
 
 # ── C) Gráficos Analíticos ────────────────────────────────────────────────────
 with tab_charts:
@@ -686,43 +691,54 @@ with tab_charts:
                     labels={scatter_x: col_label(scatter_x), scatter_y: col_label(scatter_y)},
                 )
             st.plotly_chart(fig_scatter, use_container_width=True)
+            _corr_val = scatter_df[scatter_x].corr(scatter_df[scatter_y])
+            if pd.notna(_corr_val):
+                st.caption(
+                    f"Correlação de Pearson entre {col_label(scatter_x)} e "
+                    f"{col_label(scatter_y)}: **{_corr_val:.3f}**"
+                )
 
-            # 4. Donut por categorias de procedimento
-            st.subheader("4) Donut — Distribuição por categorias de procedimento")
-            donut_mode = st.selectbox(
+            # 4. Treemap — Distribuição por categorias de procedimento
+            st.subheader("4) Treemap — Distribuição por categorias de procedimento")
+            treemap_mode = st.selectbox(
                 "Analisar categorias de",
                 options=["Quantidade (qtd_*)", "Valor (vl_*)"],
-                key="donut_mode",
+                key="treemap_mode",
             )
 
-            candidate_cols = qtd_proc_cols if donut_mode.startswith("Quantidade") else vl_proc_cols
+            candidate_cols = qtd_proc_cols if treemap_mode.startswith("Quantidade") else vl_proc_cols
             available_cols = [col for col in candidate_cols if col in df.columns]
 
             if available_cols:
-                donut_selected = st.multiselect(
+                treemap_selected = st.multiselect(
                     "Colunas a incluir",
                     options=available_cols,
                     default=available_cols,
                     format_func=col_label,
-                    key="donut_cols",
+                    key="treemap_cols",
                 )
-                if donut_selected:
+                if treemap_selected:
                     category_totals = (
-                        df[donut_selected]
+                        df[treemap_selected]
                         .apply(pd.to_numeric, errors="coerce")
                         .fillna(0)
                         .sum()
                         .sort_values(ascending=False)
                     )
-                    donut_data = pd.DataFrame(
+                    treemap_data = pd.DataFrame(
                         {
                             "categoria": [col_label(c) for c in category_totals.index],
                             "valor": category_totals.values,
                         }
                     )
-                    fig_donut = px.pie(donut_data, names="categoria", values="valor", hole=0.45)
-                    st.plotly_chart(fig_donut, use_container_width=True)
+                    fig_treemap = px.treemap(
+                        treemap_data,
+                        path=["categoria"],
+                        values="valor",
+                    )
+                    fig_treemap.update_traces(textinfo="label+percent root")
+                    st.plotly_chart(fig_treemap, use_container_width=True)
                 else:
-                    st.info("Selecione ao menos uma coluna para exibir o donut.")
+                    st.info("Selecione ao menos uma coluna para exibir o treemap.")
             else:
                 st.info("Não foram encontradas colunas de categorias de procedimento no recorte atual.")
