@@ -7,6 +7,10 @@ Toda a lógica de banco de dados está em db.py.
 As credenciais são lidas dos secrets do Streamlit Cloud
 (Advanced Settings > Secrets) ou, localmente, do arquivo
 .streamlit/secrets.toml (não versionado).
+
+Fallback: se a conexão com o banco falhar, o app carrega os dados locais
+(Parquet) do módulo fallback.py, com funcionalidades adaptadas à ausência
+de colunas de UF.
 """
 
 import io
@@ -19,7 +23,6 @@ import streamlit as st
 
 from db import (
     calculate_average_ticket,
-    get_dimension_mapping,
     get_period_totals,
     get_procedure_columns,
     load_consolidated_data,
@@ -27,6 +30,12 @@ from db import (
     load_municipality_options,
     month_to_num,
     previous_period,
+)
+from fallback import (
+    get_fallback_filter_options,
+    get_fallback_period_totals,
+    get_fallback_procedure_columns,
+    load_fallback_consolidated,
 )
 
 # ---------------------------------------------------------------------------
@@ -147,36 +156,64 @@ with tab_intro:
     )
 
     st.info(
-        "💡 Para explorar os dados, selecione **Ano**, **Mês** e ao menos uma "
-        "**Unidade da Federação** na barra lateral e navegue pelas abas ao lado.",
+        "💡 Para explorar os dados, aplique os filtros na barra lateral "
+        "e navegue pelas abas ao lado.",
         icon="👈",
     )
 
 # ---------------------------------------------------------------------------
-# Carregamento inicial (opções de filtros) — necessário apenas nas abas de dados
+# Carregamento inicial — tenta DB; usa fallback Parquet em caso de falha
 # ---------------------------------------------------------------------------
 _db_error: Optional[Exception] = None
+_using_fallback = False
 _years: list = []
 _months: list = []
 _uf_options = None
+_fb_municipios: Optional[pd.DataFrame] = None
 
 try:
     _years, _months, _uf_options = load_filter_options()
 except Exception as exc:
     _db_error = exc
+    try:
+        _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
+        _years, _months = _fb_years, _fb_months
+        _using_fallback = True
+    except Exception:
+        pass  # both DB and fallback unavailable
 
-# ── Sidebar — Filtros hierárquicos (só populados quando DB está disponível) ──
-if _db_error is None and _years and _months:
+# ---------------------------------------------------------------------------
+# Sidebar — Filtros (DB ou Fallback)
+# ---------------------------------------------------------------------------
+selected_years: list = []
+selected_months: list = []
+selected_ufs: tuple = ()
+selected_municipios: tuple = ()
+
+if _using_fallback and _fb_municipios is not None:
+    with st.sidebar:
+        st.warning("⚠️ **Modo Offline** — banco indisponível.\nExibindo dados locais (Parquet).")
+        st.header("Filtros")
+
+        selected_years = st.multiselect("Ano", options=_years, default=_years)
+        selected_months = st.multiselect("Mês", options=_months, default=_months)
+
+        mun_label_to_code = {
+            f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
+            for row in _fb_municipios.itertuples(index=False)
+        }
+        selected_mun_labels = st.multiselect(
+            "Município",
+            options=list(mun_label_to_code.keys()),
+        )
+        selected_municipios = tuple(mun_label_to_code[lbl] for lbl in selected_mun_labels)
+
+elif _db_error is None and _years and _months and _uf_options is not None:
     with st.sidebar:
         st.header("Filtros")
 
         selected_years = st.multiselect("Ano", options=_years, default=_years)
-
-        selected_months = st.multiselect(
-            "Mês",
-            options=_months,
-            default=_months,
-        )
+        selected_months = st.multiselect("Mês", options=_months, default=_months)
 
         uf_label_to_code = {
             f"{row.uf_sigla} — {row.uf_nome}": row.uf_codigo
@@ -200,47 +237,50 @@ if _db_error is None and _years and _months:
         selected_municipios = tuple(
             municipio_label_to_code[label] for label in selected_municipio_labels
         )
-else:
-    selected_years = []
-    selected_months = []
-    selected_ufs = ()
-    selected_municipios = ()
 
 
 def _render_db_unavailable() -> None:
-    """Exibe mensagem de erro de banco nas abas de dados."""
+    """Exibe mensagem de erro total (DB + fallback ambos falharam)."""
     if _db_error is not None:
         st.error(
-            "Não foi possível conectar ao banco de dados. "
-            "Verifique os secrets configurados no Streamlit Cloud "
-            "(ou `.streamlit/secrets.toml` para execução local)."
+            "Não foi possível conectar ao banco de dados e os dados locais de fallback "
+            "também não estão disponíveis. Verifique os secrets configurados no "
+            "Streamlit Cloud (ou `.streamlit/secrets.toml` para execução local)."
         )
         st.exception(_db_error)
     elif not _years or not _months:
-        st.warning("Não há dados disponíveis para os filtros informados.")
+        st.warning("Não há dados disponíveis.")
 
 
 # ---------------------------------------------------------------------------
-# Validação dos filtros obrigatórios (para as abas de dados)
+# Validação dos filtros obrigatórios
 # ---------------------------------------------------------------------------
 selected_years_tuple = tuple(sorted(selected_years))
 selected_months_tuple = tuple(sorted(selected_months, key=month_to_num))
 
 # ── A) Raw Data ──────────────────────────────────────────────────────────────
 with tab_raw:
-    if _db_error is not None or not _years:
+    if not _using_fallback and (_db_error is not None or not _years):
         _render_db_unavailable()
     elif not selected_years_tuple or not selected_months_tuple:
         st.warning("Selecione ao menos um ano e um mês para continuar.")
-    elif not selected_ufs:
+    elif not _using_fallback and not selected_ufs:
         st.info("Selecione ao menos uma **Unidade da Federação (UF)** na barra lateral para carregar os dados.")
     else:
-        df = load_consolidated_data(
-            selected_years_tuple,
-            selected_months_tuple,
-            selected_ufs,
-            selected_municipios,
-        )
+        if _using_fallback:
+            df = load_fallback_consolidated(
+                selected_years_tuple,
+                selected_months_tuple,
+                selected_municipios,
+            )
+        else:
+            df = load_consolidated_data(
+                selected_years_tuple,
+                selected_months_tuple,
+                selected_ufs,
+                selected_municipios,
+            )
+
         if df.empty:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
@@ -248,21 +288,39 @@ with tab_raw:
             current_year = max(selected_years_tuple)
             current_month = max(selected_months_tuple, key=month_to_num)
             prev_period = previous_period(current_year, current_month)
-            current_qtd, current_vl = get_period_totals(
-                current_year, current_month, selected_ufs, selected_municipios
-            )
-            if prev_period:
-                prev_year, prev_month = prev_period
-                prev_qtd, prev_vl = get_period_totals(
-                    prev_year, prev_month, selected_ufs, selected_municipios
+
+            if _using_fallback:
+                current_qtd, current_vl = get_fallback_period_totals(
+                    current_year, current_month, selected_municipios
                 )
-                delta_caption = (
-                    f"Delta calculado em relação ao período anterior ({prev_year}-{prev_month}) "
-                    "com os mesmos filtros geográficos."
-                )
+                if prev_period:
+                    prev_year, prev_month = prev_period
+                    prev_qtd, prev_vl = get_fallback_period_totals(
+                        prev_year, prev_month, selected_municipios
+                    )
+                    delta_caption = (
+                        f"Delta calculado em relação ao período anterior ({prev_year}-{prev_month}) "
+                        "com os mesmos filtros (dados locais)."
+                    )
+                else:
+                    prev_qtd, prev_vl = 0.0, 0.0
+                    delta_caption = "Delta indisponível: não há período anterior válido."
             else:
-                prev_qtd, prev_vl = 0.0, 0.0
-                delta_caption = "Delta indisponível: não há período anterior válido para o recorte atual."
+                current_qtd, current_vl = get_period_totals(
+                    current_year, current_month, selected_ufs, selected_municipios
+                )
+                if prev_period:
+                    prev_year, prev_month = prev_period
+                    prev_qtd, prev_vl = get_period_totals(
+                        prev_year, prev_month, selected_ufs, selected_municipios
+                    )
+                    delta_caption = (
+                        f"Delta calculado em relação ao período anterior ({prev_year}-{prev_month}) "
+                        "com os mesmos filtros geográficos."
+                    )
+                else:
+                    prev_qtd, prev_vl = 0.0, 0.0
+                    delta_caption = "Delta indisponível: não há período anterior válido para o recorte atual."
 
             kpi_total_qtd = float(df["total_qtd"].sum())
             kpi_total_vl = float(df["total_vl"].sum())
@@ -302,24 +360,34 @@ with tab_raw:
 
 # ── B) Estatísticas Descritivas ───────────────────────────────────────────────
 with tab_kpis:
-    if _db_error is not None or not _years:
+    if not _using_fallback and (_db_error is not None or not _years):
         _render_db_unavailable()
     elif not selected_years_tuple or not selected_months_tuple:
         st.warning("Selecione ao menos um ano e um mês para continuar.")
-    elif not selected_ufs:
+    elif not _using_fallback and not selected_ufs:
         st.info("Selecione ao menos uma **Unidade da Federação (UF)** na barra lateral para carregar os dados.")
     else:
-        df_stats = load_consolidated_data(
-            selected_years_tuple,
-            selected_months_tuple,
-            selected_ufs,
-            selected_municipios,
-        )
+        if _using_fallback:
+            df_stats = load_fallback_consolidated(
+                selected_years_tuple,
+                selected_months_tuple,
+                selected_municipios,
+            )
+        else:
+            df_stats = load_consolidated_data(
+                selected_years_tuple,
+                selected_months_tuple,
+                selected_ufs,
+                selected_municipios,
+            )
+
         if df_stats.empty:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
             st.subheader("Resumo Estatístico")
-            qtd_proc_cols, vl_proc_cols = get_procedure_columns()
+            qtd_proc_cols, vl_proc_cols = (
+                get_fallback_procedure_columns() if _using_fallback else get_procedure_columns()
+            )
             all_metric_cols = (
                 ["total_qtd", "total_vl"]
                 + [c for c in qtd_proc_cols if c in df_stats.columns]
@@ -329,26 +397,39 @@ with tab_kpis:
             st.dataframe(stats_df.describe().T, use_container_width=True)
 
             st.markdown("**Indicadores de referência do recorte atual:**")
-            c1, c2, c3 = st.columns(3)
-            c1.write(f"- Municípios no recorte: **{df_stats['municipio_nome'].nunique()}**")
-            c2.write(f"- UFs no recorte: **{df_stats['uf_nome'].nunique()}**")
-            c3.write(f"- Períodos no recorte: **{df_stats[['ano', 'mes']].drop_duplicates().shape[0]}**")
+            if _using_fallback:
+                c1, c2 = st.columns(2)
+                c1.write(f"- Municípios no recorte: **{df_stats['municipio_nome'].nunique()}**")
+                c2.write(f"- Períodos no recorte: **{df_stats[['ano', 'mes']].drop_duplicates().shape[0]}**")
+            else:
+                c1, c2, c3 = st.columns(3)
+                c1.write(f"- Municípios no recorte: **{df_stats['municipio_nome'].nunique()}**")
+                c2.write(f"- UFs no recorte: **{df_stats['uf_nome'].nunique()}**")
+                c3.write(f"- Períodos no recorte: **{df_stats[['ano', 'mes']].drop_duplicates().shape[0]}**")
 
 # ── C) Gráficos Analíticos ────────────────────────────────────────────────────
 with tab_charts:
-    if _db_error is not None or not _years:
+    if not _using_fallback and (_db_error is not None or not _years):
         _render_db_unavailable()
     elif not selected_years_tuple or not selected_months_tuple:
         st.warning("Selecione ao menos um ano e um mês para continuar.")
-    elif not selected_ufs:
+    elif not _using_fallback and not selected_ufs:
         st.info("Selecione ao menos uma **Unidade da Federação (UF)** na barra lateral para carregar os dados.")
     else:
-        df_charts = load_consolidated_data(
-            selected_years_tuple,
-            selected_months_tuple,
-            selected_ufs,
-            selected_municipios,
-        )
+        if _using_fallback:
+            df_charts = load_fallback_consolidated(
+                selected_years_tuple,
+                selected_months_tuple,
+                selected_municipios,
+            )
+        else:
+            df_charts = load_consolidated_data(
+                selected_years_tuple,
+                selected_months_tuple,
+                selected_ufs,
+                selected_municipios,
+            )
+
         if df_charts.empty:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
@@ -391,7 +472,13 @@ with tab_charts:
 
             # 2. Ranking Top 10
             st.subheader("2) Ranking Top 10")
-            rank_level = st.radio("Nível do ranking", ["Município", "UF"], horizontal=True)
+            if _using_fallback:
+                # Sem colunas de UF no fallback — apenas nível Município disponível
+                rank_level = "Município"
+                st.caption("ℹ️ Dados locais não possuem informação de UF. Ranking disponível apenas por Município.")
+            else:
+                rank_level = st.radio("Nível do ranking", ["Município", "UF"], horizontal=True)
+
             rank_metric = st.selectbox(
                 "Métrica",
                 options=["total_vl", "total_qtd"],
@@ -428,22 +515,37 @@ with tab_charts:
 
             # 3. Scatter Plot
             st.subheader("3) Scatter Plot (Procedimentos x Valor)")
-            scatter_df = (
-                df.groupby(["cod_municipio", "municipio_nome", "uf_nome"], as_index=False)[["total_qtd", "total_vl"]]
-                .sum()
-                .sort_values("total_vl", ascending=False)
-            )
-            fig_scatter = px.scatter(
-                scatter_df,
-                x="total_qtd", y="total_vl",
-                hover_data=["municipio_nome", "uf_nome"],
-                labels={"total_qtd": "Volume de Procedimentos", "total_vl": "Valor Aprovado (R$)"},
-            )
+            if _using_fallback:
+                scatter_df = (
+                    df.groupby(["cod_municipio", "municipio_nome"], as_index=False)[["total_qtd", "total_vl"]]
+                    .sum()
+                    .sort_values("total_vl", ascending=False)
+                )
+                fig_scatter = px.scatter(
+                    scatter_df,
+                    x="total_qtd", y="total_vl",
+                    hover_data=["municipio_nome"],
+                    labels={"total_qtd": "Volume de Procedimentos", "total_vl": "Valor Aprovado (R$)"},
+                )
+            else:
+                scatter_df = (
+                    df.groupby(["cod_municipio", "municipio_nome", "uf_nome"], as_index=False)[["total_qtd", "total_vl"]]
+                    .sum()
+                    .sort_values("total_vl", ascending=False)
+                )
+                fig_scatter = px.scatter(
+                    scatter_df,
+                    x="total_qtd", y="total_vl",
+                    hover_data=["municipio_nome", "uf_nome"],
+                    labels={"total_qtd": "Volume de Procedimentos", "total_vl": "Valor Aprovado (R$)"},
+                )
             st.plotly_chart(fig_scatter, use_container_width=True)
 
             # 4. Donut por categorias de procedimento
             st.subheader("4) Donut — Distribuição por categorias de procedimento")
-            qtd_proc_cols, vl_proc_cols = get_procedure_columns()
+            qtd_proc_cols, vl_proc_cols = (
+                get_fallback_procedure_columns() if _using_fallback else get_procedure_columns()
+            )
 
             donut_mode = st.selectbox(
                 "Analisar categorias de",
