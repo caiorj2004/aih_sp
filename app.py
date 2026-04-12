@@ -885,7 +885,7 @@ with tab_charts:
             # 5. Heatmap Sazonal
             st.subheader("5) Heatmap Sazonal")
             st.caption(
-                "Mapa de calor mês × ano (ou mês × UF) para identificar sazonalidade e quebras de padrão histórico. "
+                "Mapa de calor mês × ano (ou mês × UF) para identificar sazonalidade e quebras de padrão histórico.\n\n"
                 "ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município."
             )
             _MONTH_ABBR_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
