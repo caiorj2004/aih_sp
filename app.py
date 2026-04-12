@@ -148,9 +148,9 @@ st.caption("Análise de Autorizações de Internação Hospitalar com filtros hi
 tab_intro, tab_raw, tab_kpis, tab_charts = st.tabs(
     [
         "🏠 Introdução",
-        "A) Lista dos Dados Armazenados",
-        "B) Estatísticas Descritivas",
-        "C) Gráficos Analíticos",
+        "Lista dos Dados Armazenados",
+        "Estatísticas Descritivas",
+        "Gráficos Analíticos",
     ]
 )
 
@@ -312,6 +312,12 @@ if _using_fallback and _fb_municipios is not None:
             options=list(mun_label_to_code.keys()),
         )
         selected_municipios = tuple(mun_label_to_code[lbl] for lbl in selected_mun_labels)
+        st.caption(
+            "ℹ️ Os gráficos **Ranking Top 10** e **Scatter Plot** sempre exibem "
+            "todos os municípios, independentemente deste filtro."
+        )
+        if not selected_municipios:
+            st.warning("⚠️ Selecione ao menos um município para o funcionamento do app.")
 
 elif _db_error is None and _years and _months and _uf_options is not None:
     with st.sidebar:
@@ -342,6 +348,10 @@ elif _db_error is None and _years and _months and _uf_options is not None:
         selected_municipios = tuple(
             municipio_label_to_code[label] for label in selected_municipio_labels
         )
+        st.caption(
+            "ℹ️ Os gráficos **Ranking Top 10** e **Scatter Plot** sempre exibem "
+            "todos os municípios da UF selecionada, independentemente deste filtro."
+        )
 
 
 def _render_db_unavailable() -> None:
@@ -371,6 +381,8 @@ with tab_raw:
         st.warning("Selecione ao menos um ano e um mês para continuar.")
     elif not _using_fallback and not selected_ufs:
         st.info("Selecione ao menos uma **Unidade da Federação (UF)** na barra lateral para carregar os dados.")
+    elif _using_fallback and not selected_municipios:
+        st.warning("Selecione ao menos um **município** na barra lateral para continuar.")
     else:
         if _using_fallback:
             df = load_fallback_consolidated(
@@ -475,6 +487,8 @@ with tab_kpis:
         st.warning("Selecione ao menos um ano e um mês para continuar.")
     elif not _using_fallback and not selected_ufs:
         st.info("Selecione ao menos uma **Unidade da Federação (UF)** na barra lateral para carregar os dados.")
+    elif _using_fallback and not selected_municipios:
+        st.warning("Selecione ao menos um **município** na barra lateral para continuar.")
     else:
         if _using_fallback:
             df_stats = load_fallback_consolidated(
@@ -521,7 +535,7 @@ with tab_kpis:
                 "O **total de procedimentos** é a soma da coluna `total_qtd`."
             )
 
-# ── C) Gráficos Analíticos ────────────────────────────────────────────────────
+# ── Gráficos Analíticos ────────────────────────────────────────────────────
 with tab_charts:
     if not _using_fallback and (_db_error is not None or not _years):
         _render_db_unavailable()
@@ -529,12 +543,20 @@ with tab_charts:
         st.warning("Selecione ao menos um ano e um mês para continuar.")
     elif not _using_fallback and not selected_ufs:
         st.info("Selecione ao menos uma **Unidade da Federação (UF)** na barra lateral para carregar os dados.")
+    elif _using_fallback and not selected_municipios:
+        st.warning("Selecione ao menos um **município** na barra lateral para continuar.")
     else:
         if _using_fallback:
             df_charts = load_fallback_consolidated(
                 selected_years_tuple,
                 selected_months_tuple,
                 selected_municipios,
+            )
+            # Charts 2 and 3 always include all municipalities
+            df_charts_all = load_fallback_consolidated(
+                selected_years_tuple,
+                selected_months_tuple,
+                (),
             )
         else:
             df_charts = load_consolidated_data(
@@ -543,18 +565,26 @@ with tab_charts:
                 selected_ufs,
                 selected_municipios,
             )
+            # Charts 2 and 3 always include all municipalities in selected UFs
+            df_charts_all = load_consolidated_data(
+                selected_years_tuple,
+                selected_months_tuple,
+                selected_ufs,
+                (),
+            )
 
         if df_charts.empty:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
-            df = df_charts  # alias for chart code below
+            df = df_charts           # alias used by charts 1 and 4 (municipality-filtered)
+            df_all = df_charts_all   # used by charts 2 and 3 (all municipalities)
 
             # Colunas de procedimento disponíveis no recorte atual
             qtd_proc_cols, vl_proc_cols = (
                 get_fallback_procedure_columns() if _using_fallback else get_procedure_columns()
             )
-            avail_qtd_cols = ["total_qtd"] + [c for c in qtd_proc_cols if c in df.columns]
-            avail_vl_cols = ["total_vl"] + [c for c in vl_proc_cols if c in df.columns]
+            avail_qtd_cols = ["total_qtd"] + [c for c in qtd_proc_cols if c in df_all.columns]
+            avail_vl_cols = ["total_vl"] + [c for c in vl_proc_cols if c in df_all.columns]
 
             # 1. Série temporal
             st.subheader("1) Série temporal")
@@ -608,6 +638,7 @@ with tab_charts:
 
             # 2. Ranking Top 10
             st.subheader("2) Ranking Top 10")
+            st.caption("ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município.")
             if _using_fallback:
                 rank_level = "Município"
                 st.caption("ℹ️ Dados locais não possuem informação de UF. Ranking disponível apenas por Município.")
@@ -624,7 +655,7 @@ with tab_charts:
 
             if rank_level == "Município":
                 ranking = (
-                    df.groupby("municipio_nome", as_index=False)[rank_metric]
+                    df_all.groupby("municipio_nome", as_index=False)[rank_metric]
                     .sum()
                     .sort_values(rank_metric, ascending=False)
                     .head(10)
@@ -632,7 +663,7 @@ with tab_charts:
                 cat_col = "municipio_nome"
             else:
                 ranking = (
-                    df.groupby("uf_nome", as_index=False)[rank_metric]
+                    df_all.groupby("uf_nome", as_index=False)[rank_metric]
                     .sum()
                     .sort_values(rank_metric, ascending=False)
                     .head(10)
@@ -651,7 +682,8 @@ with tab_charts:
 
             # 3. Scatter Plot
             st.subheader("3) Scatter Plot")
-            sc_c1, sc_c2 = st.columns(2)
+            st.caption("ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município.")
+            sc_c1, sc_c2, sc_c3 = st.columns(3)
             with sc_c1:
                 scatter_x = st.selectbox(
                     "Eixo X (Quantidade)",
@@ -666,9 +698,16 @@ with tab_charts:
                     format_func=col_label,
                     key="scatter_y",
                 )
+            with sc_c3:
+                corr_method = st.radio(
+                    "Correlação",
+                    options=["Pearson", "Spearman"],
+                    horizontal=True,
+                    key="corr_method",
+                )
             if _using_fallback:
                 scatter_df = (
-                    df.groupby(["cod_municipio", "municipio_nome"], as_index=False)[[scatter_x, scatter_y]]
+                    df_all.groupby(["cod_municipio", "municipio_nome"], as_index=False)[[scatter_x, scatter_y]]
                     .sum()
                     .sort_values(scatter_y, ascending=False)
                 )
@@ -680,7 +719,7 @@ with tab_charts:
                 )
             else:
                 scatter_df = (
-                    df.groupby(["cod_municipio", "municipio_nome", "uf_nome"], as_index=False)[[scatter_x, scatter_y]]
+                    df_all.groupby(["cod_municipio", "municipio_nome", "uf_nome"], as_index=False)[[scatter_x, scatter_y]]
                     .sum()
                     .sort_values(scatter_y, ascending=False)
                 )
@@ -691,12 +730,24 @@ with tab_charts:
                     labels={scatter_x: col_label(scatter_x), scatter_y: col_label(scatter_y)},
                 )
             st.plotly_chart(fig_scatter, use_container_width=True)
-            _corr_val = scatter_df[scatter_x].corr(scatter_df[scatter_y])
+            _corr_method_key = "pearson" if corr_method == "Pearson" else "spearman"
+            _corr_val = scatter_df[scatter_x].corr(scatter_df[scatter_y], method=_corr_method_key)
             if pd.notna(_corr_val):
                 st.caption(
-                    f"Correlação de Pearson entre {col_label(scatter_x)} e "
+                    f"Correlação de {corr_method} entre {col_label(scatter_x)} e "
                     f"{col_label(scatter_y)}: **{_corr_val:.3f}**"
                 )
+            st.markdown(
+                """
+                **Pearson**: mede a correlação linear entre duas variáveis contínuas.
+                Assume distribuição normal e é sensível a outliers.
+                Ideal quando a relação esperada é linear e os dados não têm desvios extremos.
+
+                **Spearman**: mede a correlação entre as *ordens (ranks)* das variáveis,
+                sendo não-paramétrico e robusto a outliers.
+                Recomendado quando os dados têm distribuição assimétrica ou relação monotônica não-linear.
+                """
+            )
 
             # 4. Treemap — Distribuição por categorias de procedimento
             st.subheader("4) Treemap — Distribuição por categorias de procedimento")
@@ -711,24 +762,29 @@ with tab_charts:
 
             if available_cols:
                 treemap_selected = st.multiselect(
-                    "Colunas a incluir",
+                    "Colunas a incluir (colunas removidas são agrupadas em 'Outros')",
                     options=available_cols,
-                    default=available_cols,
+                    default=available_cols[:6],
                     format_func=col_label,
                     key="treemap_cols",
                 )
                 if treemap_selected:
-                    category_totals = (
-                        df[treemap_selected]
+                    # Compute totals for ALL columns so percentages are relative to the full total
+                    all_col_totals = (
+                        df[available_cols]
                         .apply(pd.to_numeric, errors="coerce")
                         .fillna(0)
                         .sum()
-                        .sort_values(ascending=False)
                     )
+                    selected_totals = all_col_totals[treemap_selected].sort_values(ascending=False)
+                    outros_value = float(all_col_totals.drop(index=treemap_selected).sum())
+                    rows = [(col_label(c), float(v)) for c, v in selected_totals.items()]
+                    if outros_value > 0:
+                        rows.append(("Outros", outros_value))
                     treemap_data = pd.DataFrame(
                         {
-                            "categoria": [col_label(c) for c in category_totals.index],
-                            "valor": category_totals.values,
+                            "categoria": [r[0] for r in rows],
+                            "valor": [r[1] for r in rows],
                         }
                     )
                     fig_treemap = px.treemap(
