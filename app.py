@@ -155,6 +155,32 @@ with tab_intro:
         """
     )
 
+    st.subheader("🔄 Modo Offline (Fallback)")
+    st.markdown(
+        """
+        Na eventualidade de falha na conexão com o banco de dados PostgreSQL, o
+        aplicativo ativa automaticamente um **modo offline** (*fallback*), carregando
+        os dados diretamente de arquivos **Parquet** armazenados localmente na pasta
+        `data/` do repositório.
+
+        Esses arquivos foram gerados a partir dos exports brutos do **TabNet** e,
+        por essa razão, **não possuem coluna de Unidade da Federação (UF)** — os dados
+        chegam apenas com granularidade municipal. Como consequência, quando o fallback
+        está ativo:
+
+        - O filtro **UF** é removido da barra lateral; apenas Município fica disponível.
+        - O gráfico de **Ranking Top 10** opera exclusivamente no nível de Município
+          (a opção de ranking por UF é ocultada).
+        - O **Scatter Plot** exibe apenas o nome do município no hover (sem UF).
+        - O indicador *"UFs no recorte"* é suprimido da aba de Estatísticas Descritivas.
+        - Uma faixa de aviso ⚠️ é exibida na barra lateral para informar que o painel
+          está em modo offline.
+
+        Os demais recursos — série temporal, donut por categoria, KPIs com delta e
+        export para CSV — funcionam normalmente.
+        """
+    )
+
     st.info(
         "💡 Para explorar os dados, aplique os filtros na barra lateral "
         "e navegue pelas abas ao lado.",
