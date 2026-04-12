@@ -238,10 +238,12 @@ with tab_charts:
         .sum()
     )
     series["_mes_num"] = series["mes"].apply(month_to_num)
-    series = series.sort_values(["ano", "_mes_num"]).drop(columns=["_mes_num"])
+    series = series[series["_mes_num"] > 0].copy()
+    series = series.sort_values(["ano", "_mes_num"])
     series["periodo"] = pd.to_datetime(
-        series["ano"].astype(str) + "-" + series["mes"].apply(month_to_num).astype(str).str.zfill(2) + "-01"
+        series["ano"].astype(str) + "-" + series["_mes_num"].astype(str).str.zfill(2) + "-01"
     )
+    series = series.drop(columns=["_mes_num"])
 
     fig_line = go.Figure()
     fig_line.add_trace(

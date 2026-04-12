@@ -33,14 +33,29 @@ _ALLOWED_TABLES = {"aih_qtd", "aih_vl", "municipios_ibge", "unidade_federacao"}
 _MONTH_ABBRS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
+# Portuguese month abbreviations (3-letter) mapped to month number
+_PT_MONTH_MAP: Dict[str, int] = {
+    "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
+    "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
+    # full Portuguese names
+    "janeiro": 1, "fevereiro": 2, "março": 3, "marco": 3, "abril": 4,
+    "maio": 5, "junho": 6, "julho": 7, "agosto": 8, "setembro": 9,
+    "outubro": 10, "novembro": 11, "dezembro": 12,
+}
+
 
 def month_to_num(mes: str) -> int:
-    """Converte abreviação de mês ('Jun') ou string numérica ('6') para inteiro 1-12."""
+    """Converte abreviação de mês ('Jun', 'Jun', 'Fev', 'fevereiro') ou string numérica ('6') para inteiro 1-12."""
     try:
         return int(mes)
     except (ValueError, TypeError):
+        s = str(mes).strip().lower()
+        # Portuguese lookup (full name or 3-letter abbreviation)
+        if s in _PT_MONTH_MAP:
+            return _PT_MONTH_MAP[s]
+        # English 3-letter abbreviation (case-insensitive)
         try:
-            return _MONTH_ABBRS.index(str(mes).capitalize()[:3]) + 1
+            return _MONTH_ABBRS.index(s.capitalize()[:3]) + 1
         except ValueError:
             return 0
 
