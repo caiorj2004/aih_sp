@@ -52,27 +52,6 @@ aih_sp/
 
 ---
 
-## Deploy no Streamlit Cloud
-
-As credenciais são configuradas diretamente no painel do Streamlit Cloud:
-
-1. Acesse **[share.streamlit.io](https://share.streamlit.io)** e abra o app.
-2. Vá em **Settings → Secrets** e adicione:
-
-```toml
-[connections.postgresql]
-dialect  = "postgresql"
-host     = "SEU_HOST"
-port     = 5432
-database = "SEU_BANCO"
-username = "SEU_USUARIO"
-password = "SUA_SENHA"
-```
-
-3. Clique em **Save** e faça um novo deploy.
-
----
-
 ## Execução local
 
 1. Crie o arquivo `.streamlit/secrets.toml` com as credenciais acima (não versionar).
@@ -102,8 +81,3 @@ Se o banco de dados não estiver acessível, o app iniciará automaticamente em 
 | `sqlalchemy` | Abstração de banco de dados |
 | `psycopg2-binary` | Driver PostgreSQL |
 
----
-
-## Contexto acadêmico
-
-Projeto desenvolvido como trabalho da disciplina de Engenharia de Dados no **IESB**. O escopo abrange scraping, ETL, modelagem relacional e visualização — demonstrando o ciclo completo de um projeto de dados, da fonte bruta ao produto final acessível via browser.
