@@ -655,6 +655,16 @@ with tab_charts:
             avail_qtd_cols = ["total_qtd"] + [c for c in qtd_proc_cols if c in df_all.columns]
             avail_vl_cols = ["total_vl"] + [c for c in vl_proc_cols if c in df_all.columns]
 
+            # Ticket Médio — caixa de destaque antes do primeiro gráfico
+            _tm_vl = pd.to_numeric(df["total_vl"], errors="coerce").sum()
+            _tm_qtd = pd.to_numeric(df["total_qtd"], errors="coerce").sum()
+            _tm_val = (_tm_vl / _tm_qtd) if _tm_qtd > 0 else 0.0
+            st.metric(
+                label="🏷️ Ticket Médio da Seleção (R$/procedimento)",
+                value=format_currency(_tm_val),
+            )
+            st.divider()
+
             # 1. Série temporal
             st.subheader("1) Série temporal")
             ts_c1, ts_c2 = st.columns(2)
@@ -928,7 +938,7 @@ with tab_charts:
                 go.Heatmap(
                     z=_hm_pivot.values,
                     x=_MONTH_ABBR_PT,
-                    y=[str(v) for v in _hm_pivot.index],
+                    y=[str(int(float(v))) if _hm_group_col == "ano" else str(v) for v in _hm_pivot.index],
                     colorscale="YlOrRd",
                     hovertemplate="%{y} — %{x}: %{z:,.0f}<extra></extra>",
                 )
@@ -940,66 +950,4 @@ with tab_charts:
             )
             st.plotly_chart(fig_heatmap, use_container_width=True)
 
-            # 6. Box Plot — Ticket Médio por UF / Município
-            st.subheader("6) Box Plot — Ticket Médio por UF / Município")
-            st.caption(
-                "Distribuição do ticket médio (Valor Total / Qtd de Procedimentos) por município, "
-                "agrupada por UF. Pontos isolados acima da caixa indicam custo fora do padrão estadual."
-            )
-            _bp_df = df_all.copy()
-            _bp_df["_ticket"] = (
-                pd.to_numeric(_bp_df["total_vl"], errors="coerce")
-                / pd.to_numeric(_bp_df["total_qtd"], errors="coerce").replace(0, float("nan"))
-            )
-            _bp_df = _bp_df[_bp_df["_ticket"].notna() & (_bp_df["_ticket"] > 0)].copy()
 
-            if _bp_df.empty:
-                st.info("Sem dados suficientes para exibir o Box Plot com os filtros atuais.")
-            else:
-                if _using_fallback:
-                    _bp_group = "municipio_nome"
-                    _bp_label = "Município"
-                    # Use all municipalities; sort by median descending
-                    _bp_order = (
-                        _bp_df.groupby(_bp_group)["_ticket"]
-                        .median()
-                        .sort_values(ascending=False)
-                        .index.tolist()
-                    )
-                    fig_box = px.box(
-                        _bp_df,
-                        x=_bp_group,
-                        y="_ticket",
-                        category_orders={_bp_group: _bp_order},
-                        labels={_bp_group: _bp_label, "_ticket": "Ticket Médio (R$/proc)"},
-                        points="outliers",
-                    )
-                else:
-                    _bp_group = "uf_nome"
-                    _bp_label = "UF"
-                    _bp_order = (
-                        _bp_df.groupby(_bp_group)["_ticket"]
-                        .median()
-                        .sort_values(ascending=False)
-                        .index.tolist()
-                    )
-                    fig_box = px.box(
-                        _bp_df,
-                        x=_bp_group,
-                        y="_ticket",
-                        hover_data=["municipio_nome"],
-                        category_orders={_bp_group: _bp_order},
-                        labels={_bp_group: _bp_label, "_ticket": "Ticket Médio (R$/proc)"},
-                        points="outliers",
-                    )
-                fig_box.update_layout(
-                    xaxis_tickangle=-40,
-                    yaxis_title="Ticket Médio (R$/proc)",
-                    margin=dict(l=10, r=10, t=20, b=10),
-                )
-                st.plotly_chart(fig_box, use_container_width=True)
-                st.caption(
-                    "**Como ler:** A caixa central representa o intervalo interquartil (P25–P75). "
-                    "A linha interna é a mediana. Pontos fora das hastes são outliers — "
-                    "municípios com custo médio estatisticamente fora do padrão estadual."
-                )
