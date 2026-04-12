@@ -946,6 +946,7 @@ with tab_charts:
             fig_heatmap.update_layout(
                 xaxis_title="Mês",
                 yaxis_title=hm_y_axis,
+                yaxis=dict(type="category"),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
             st.plotly_chart(fig_heatmap, use_container_width=True)
