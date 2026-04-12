@@ -188,27 +188,32 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
     """
     Carrega todas as combinações de Ano, Mês e UF disponíveis no banco.
     Usado para popular os filtros da sidebar.
+
+    Usa duas queries leves em vez de um único SELECT DISTINCT com JOIN na tabela
+    fato (aih_qtd), que pode esgotar o espaço temporário do PostgreSQL.
     """
     conn = get_connection()
     mapping = get_dimension_mapping()
 
-    query = f"""
+    # 1. Anos e meses: consulta direta na tabela fato sem joins
+    period_df = conn.query(
+        "SELECT DISTINCT TRIM(ano) AS ano, TRIM(mes) AS mes FROM aih_qtd"
+    )
+    years = sorted(period_df["ano"].dropna().unique().tolist())
+    months = sorted(period_df["mes"].dropna().unique().tolist(), key=month_to_num)
+
+    # 2. UFs: join apenas entre tabelas de dimensão (muito menores)
+    uf_query = f"""
         SELECT DISTINCT
-            TRIM(q.ano)                                AS ano,
-            TRIM(q.mes)                                AS mes,
             CAST(m.uf_codigo AS TEXT)                  AS uf_codigo,
             CAST(u.{mapping['uf_sigla_col']} AS TEXT)  AS uf_sigla,
             CAST(u.{mapping['uf_name_col']} AS TEXT)   AS uf_nome
-        FROM aih_qtd q
-        JOIN municipios_ibge m   ON m.{mapping['municipio_code_col']} = q.cod_municipio
-        JOIN unidade_federacao u ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)
+        FROM municipios_ibge m
+        JOIN unidade_federacao u
+          ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)
     """
-    options_df = conn.query(query)
-
-    years = sorted(options_df["ano"].dropna().unique().tolist())
-    months = sorted(options_df["mes"].dropna().unique().tolist(), key=month_to_num)
     uf_df = (
-        options_df[["uf_codigo", "uf_sigla", "uf_nome"]]
+        conn.query(uf_query)
         .drop_duplicates()
         .sort_values(["uf_sigla", "uf_codigo"])
     )
