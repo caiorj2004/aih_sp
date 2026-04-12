@@ -345,21 +345,31 @@ responsabilidades em ficheiros distintos:
 aih_sp/
 ├── app.py                # Interface Streamlit (camada de apresentação)
 ├── db.py                 # Conexão e consultas ao PostgreSQL (camada de dados)
+├── fallback.py           # Acesso a dados locais Parquet (modo offline)
 ├── requirements.txt      # Dependências Python declarativas
+├── data/
+│   ├── aih_qtd_fallback.parquet  # Snapshot de quantidades
+│   └── aih_vl_fallback.parquet   # Snapshot de valores
 ├── .streamlit/
 │   ├── config.toml       # Tematização e configurações de servidor (versionado)
 │   └── secrets.toml      # Credenciais de acesso — NÃO versionado
 └── .gitignore
 \end{verbatim}
 
-Esta separação em dois módulos funcionais (\texttt{app.py} e \texttt{db.py}) segue o
-princípio de responsabilidade única (\textit{Single Responsibility Principle}): toda a
-lógica de interface e renderização reside em \texttt{app.py}, enquanto toda a
-comunicação com o SGBD — consultas SQL, gestão de conexões e cache — é encapsulada em
-\texttt{db.py}. Esta organização facilita a manutenção independente das camadas e
-permite que eventuais substituições de \textit{backend} (por exemplo, a migração para
-outro SGBD) exijam alterações apenas no módulo de dados, sem tocar na camada de
-apresentação.
+A organização adota três módulos funcionais com responsabilidades claras, seguindo o
+princípio de responsabilidade única (\textit{Single Responsibility Principle}):
+
+\begin{itemize}
+    \item \texttt{app.py} — toda a lógica de interface e renderização;
+    \item \texttt{db.py} — toda a comunicação com o SGBD: consultas SQL, gestão de
+    conexões e \textit{cache};
+    \item \texttt{fallback.py} — leitura dos ficheiros Parquet locais utilizados
+    quando o banco de dados não está acessível.
+\end{itemize}
+
+Esta separação facilita a manutenção independente das camadas e permite que eventuais
+substituições de \textit{backend} exijam alterações apenas no módulo de dados, sem
+tocar na camada de apresentação.
 
 \subsection{Proteção de Credenciais e \texttt{.gitignore}}
 
@@ -388,7 +398,7 @@ ambiente de execução. As bibliotecas e as restrições de versão mínima adot
     tabulares; utilizada para transformações pós-consulta e merge entre DataFrames.
     \item \textbf{\texttt{plotly>=5.20}} — biblioteca de visualização interativa;
     responsável pelos gráficos de linha de duplo eixo, barras de ranking,
-    dispersão e \textit{donut}.
+    dispersão, \textit{treemap} e \textit{heatmap} sazonal.
     \item \textbf{\texttt{sqlalchemy>=2.0}} — \textit{toolkit} de abstração de banco de
     dados; fornece a interface de dialeto SQL e o mecanismo de execução de consultas
     parametrizadas, atuando como adaptador entre a aplicação Python e o driver
@@ -398,6 +408,8 @@ ambiente de execução. As bibliotecas e as restrições de versão mínima adot
     A variante \textit{binary} inclui os binários compilados estaticamente,
     eliminando a dependência de bibliotecas do sistema operacional no servidor de
     hospedagem.
+    \item \textbf{\texttt{pyarrow}} — motor de leitura de ficheiros Parquet utilizado
+    pelo Pandas no módulo \texttt{fallback.py} (modo \textit{offline}).
 \end{itemize}
 
 \section{Módulo de Dados: \texttt{db.py}}
@@ -450,16 +462,16 @@ configurável:
 
 \begin{itemize}
     \item \textbf{TTL de 3600 segundos (1 hora):} aplicado às funções que consultam
-    metadados de esquema (\texttt{get\_table\_columns}, \texttt{get\_dimension\_mapping},
-    \texttt{get\_procedure\_columns}), cujo conteúdo raramente varia em produção.
+    metadados de esquema (\texttt{get\_table\_columns} e
+    \texttt{get\_dimension\_mapping}), cujo conteúdo raramente varia em produção.
     \item \textbf{TTL de 1800 segundos (30 minutos):} aplicado às funções de
-    carregamento de opções de filtros (\texttt{load\_filter\_options},
-    \texttt{load\_municipality\_options}) e de dados consolidados
-    (\texttt{load\_consolidated\_data}), refletindo a frequência típica de atualização
-    dos dados hospitalares.
-    \item \textbf{TTL de 900 segundos (15 minutos):} aplicado às consultas de totais
-    por período (\texttt{get\_period\_totals}), usadas para cálculo de deltas nos KPIs,
-    onde maior frescor dos dados é desejável.
+    carregamento de opções de filtros (\texttt{load\_filter\_options} e
+    \texttt{load\_municipality\_options}), refletindo a frequência típica de
+    atualização dos dados hospitalares.
+    \item \textbf{TTL de 900 segundos (15 minutos):} aplicado às consultas de dados
+    consolidados (\texttt{load\_consolidated\_data}), totais por período
+    (\texttt{get\_period\_totals}) e colunas de procedimentos
+    (\texttt{get\_procedure\_columns}), onde maior frescor dos dados é desejável.
 \end{itemize}
 
 \subsection{Segurança: \textit{Whitelist} de Tabelas e Consultas Parametrizadas}
@@ -594,11 +606,124 @@ A junção final entre os dados de facto e as informações de dimensão é real
 Python via \texttt{DataFrame.merge()}, após a materialização dos dois conjuntos de
 resultados, garantindo a eficiência da comunicação com o SGBD.
 
+\section{Módulo de Fallback: \texttt{fallback.py}}
+
+Durante o desenvolvimento verificou-se que a dependência exclusiva do servidor
+PostgreSQL tornava a aplicação vulnerável a indisponibilidades de rede ou de
+infraestrutura. Para garantir resiliência operacional, foi desenvolvido o módulo
+\texttt{fallback.py}, que implementa um modo \textit{offline} completo baseado em
+ficheiros \textbf{Parquet} armazenados localmente na pasta \texttt{data/} do
+repositório.
+
+\subsection{Ficheiros Parquet}
+
+Dois ficheiros Parquet servem de fonte de dados alternativa:
+
+\begin{itemize}
+    \item \texttt{data/aih\_qtd\_fallback.parquet} — colunas de quantidades por
+    procedimento: \texttt{ano}, \texttt{mes}, \texttt{cod\_municipio},
+    \texttt{municipio}, \texttt{qtd\_*}, \texttt{total}.
+    \item \texttt{data/aih\_vl\_fallback.parquet} — colunas de valores por
+    procedimento: \texttt{ano}, \texttt{mes}, \texttt{cod\_municipio},
+    \texttt{municipio}, \texttt{vl\_*}, \texttt{total}.
+\end{itemize}
+
+Uma limitação importante: os ficheiros Parquet foram gerados a partir das exportações
+brutas do TabNet, que não inclui a dimensão de Unidade da Federação (UF). Por essa
+razão, o modo \textit{offline} opera apenas com granularidade municipal.
+
+\subsection{Funções do Módulo}
+
+O módulo \texttt{fallback.py} oferece um conjunto de funções espelhadas às do
+\texttt{db.py}, com assinatura compatível para permitir substituição transparente:
+
+\begin{itemize}
+    \item \texttt{load\_fallback\_raw()} — lê e cacheia os dois ficheiros Parquet com
+    \texttt{@st.cache\_data}, normalizando os tipos das colunas-chave (\texttt{ano},
+    \texttt{mes}, \texttt{cod\_municipio}) para \texttt{str}.
+    \item \texttt{get\_fallback\_filter\_options()} — extrai anos, meses e o DataFrame
+    de municípios disponíveis no Parquet.
+    \item \texttt{load\_fallback\_consolidated()} — filtra e mescla os dois Parquets
+    em função dos filtros de período e município, retornando a mesma estrutura de
+    DataFrame que \texttt{load\_consolidated\_data()}.
+    \item \texttt{get\_fallback\_period\_totals()} — equivalente offline de
+    \texttt{get\_period\_totals()}, usado no cálculo dos deltas dos KPIs.
+    \item \texttt{get\_fallback\_procedure\_columns()} — retorna as listas de colunas
+    \texttt{qtd\_*} e \texttt{vl\_*} disponíveis nos Parquets.
+\end{itemize}
+
+\subsection{Ativação Automática e Modo Misto}
+
+O processo de ativação do modo \textit{offline} ocorre em duas vias:
+
+\begin{enumerate}
+    \item \textbf{Ativação automática por falha:} se a tentativa de conexão ao
+    PostgreSQL lançar qualquer exceção (\texttt{OperationalError}, timeout ou erro de
+    autenticação), o módulo \texttt{app.py} captura o erro e, imediatamente,
+    tenta carregar os ficheiros Parquet. Se bem-sucedido, o \textit{flag}
+    \texttt{\_using\_fallback} é definido como \texttt{True} e a aplicação continua
+    operando em modo \textit{offline}:
+
+\begin{lstlisting}[language=Python]
+try:
+    _years, _months, _uf_options = load_filter_options()
+except Exception as exc:
+    _db_error = exc
+    try:
+        _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
+        _years, _months = _fb_years, _fb_months
+        _using_fallback = True
+    except Exception:
+        pass  # both DB and fallback unavailable
+\end{lstlisting}
+
+    \item \textbf{Toggle manual na barra lateral:} mesmo quando o banco de dados está
+    disponível, um botão de alternância (\texttt{st.toggle}) é exibido na barra lateral
+    — desde que os ficheiros Parquet também estejam presentes. Este controlo permite
+    ao utilizador alternar voluntariamente entre os dados do servidor e os dados locais,
+    útil para comparar versões dos dados ou para demonstrações sem acesso à rede:
+
+\begin{lstlisting}[language=Python]
+if _db_error is None and _fb_municipios is not None:
+    if st.toggle("Usar dados locais (Parquet)", key="use_local"):
+        _using_fallback = True
+        _years = _fb_years
+        _months = _fb_months
+\end{lstlisting}
+\end{enumerate}
+
+Se ambas as fontes falharem, a função auxiliar \texttt{\_render\_db\_unavailable()}
+exibe uma mensagem de erro detalhada e o \textit{traceback} completo da exceção do banco,
+evitando que o utilizador receba apenas um ecrã em branco.
+
+\subsection{Adaptações da Interface no Modo Offline}
+
+Quando o \textit{flag} \texttt{\_using\_fallback} está ativo, diversas componentes da
+interface são automaticamente adaptadas para refletir a ausência da dimensão UF:
+
+\begin{itemize}
+    \item O filtro \textbf{Unidade da Federação} é removido da barra lateral; apenas
+    o filtro de Município permanece disponível.
+    \item Uma faixa de aviso é exibida: ⚠️ \textbf{Modo Offline} (se o banco falhou)
+    ou 📁 informativo (se o utilizador activou o toggle manualmente).
+    \item No gráfico \textbf{Ranking Top 10}, o rádio de seleção de nível
+    (Município / UF) é ocultado; o ranking opera exclusivamente por Município.
+    \item No \textbf{Scatter Plot}, o \textit{hover} exibe apenas o nome do município,
+    sem a coluna de UF.
+    \item No \textbf{Heatmap Sazonal}, a opção de eixo Y por UF é suprimida.
+    \item Na aba de \textbf{Estatísticas Descritivas}, o indicador
+    ``UFs no recorte'' é omitido.
+\end{itemize}
+
+Os demais recursos — série temporal, treemap por categoria, KPIs com delta e
+exportação CSV — funcionam sem alterações.
+
 \section{Módulo de Interface: \texttt{app.py}}
 
 O módulo \texttt{app.py} implementa a totalidade da camada de apresentação do
 \textit{dashboard}, incluindo a configuração da página, a gestão de filtros
-hierárquicos, o cálculo e exibição de KPIs e as visualizações analíticas interativas.
+hierárquicos, o cálculo e exibição de KPIs, as visualizações analíticas interativas
+e o dicionário de variáveis.
 
 \subsection{Configuração e Tematização}
 
@@ -623,26 +748,35 @@ A página foi configurada com layout largo (\texttt{layout="wide"}) para maximiz
 área de visualização dos gráficos, e o ícone e título da aba do navegador foram
 personalizados via \texttt{st.set\_page\_config()}.
 
-\subsection{Tratamento de Erros na Inicialização}
+\subsection{Formatação Numérica Brasileira}
 
-O primeiro ponto de falha crítico da aplicação — a tentativa de conexão ao banco de
-dados para carregamento dos filtros — foi encapsulado num bloco \texttt{try/except}.
-Em caso de qualquer exceção (incluindo \texttt{OperationalError} por
-indisponibilidade do servidor), a aplicação exibe uma mensagem de erro informativa ao
-utilizador e interrompe a execução via \texttt{st.stop()}, evitando que o
-\textit{traceback} técnico seja o único \textit{feedback} recebido:
+Para apresentar os valores monetários e contagens no padrão brasileiro (ponto como
+separador de milhar, vírgula como separador decimal), foram implementadas duas funções
+utilitárias:
 
-\begin{lstlisting}[language=Python]
-try:
-    years, months, uf_options = load_filter_options()
-except Exception as exc:
-    st.error(
-        "Nao foi possivel conectar ao banco de dados. "
-        "Verifique os secrets configurados no Streamlit Cloud."
-    )
-    st.exception(exc)
-    st.stop()
-\end{lstlisting}
+\begin{itemize}
+    \item \texttt{format\_currency(value)} — formata um float como moeda BRL:
+    \texttt{R\$ 1.234,56}.
+    \item \texttt{br\_format(value, decimals)} — formata qualquer número com o locale
+    brasileiro; utilizada para renderizar o DataFrame de dados brutos e a tabela de
+    estatísticas.
+\end{itemize}
+
+Ambas as funções utilizam o método \texttt{str.maketrans} para permutar pontos e
+vírgulas após a formatação padrão do Python, evitando dependência de bibliotecas de
+locale do sistema operacional.
+
+\subsection{Dicionário de Rótulos (\texttt{\_PROC\_NAMES} e \texttt{COLUMN\_LABELS})}
+
+A aplicação mantém um dicionário estático \texttt{\_PROC\_NAMES} com mais de 50
+entradas, mapeando os códigos numéricos de grupos de procedimentos SIGTAP
+(ex.: \texttt{"0406"}) para as respectivas denominações legíveis em português
+(ex.: \texttt{"Cirurgia do aparelho circulatório"}). Este dicionário alimenta o
+dicionário de exibição \texttt{COLUMN\_LABELS}, que associa nomes de colunas como
+\texttt{qtd\_0406} ao rótulo completo \texttt{"Qtd -- 0406 Cirurgia do aparelho
+circulatório"}. A função \texttt{col\_label(col)} é então utilizada em todos os
+componentes Streamlit (\texttt{format\_func}, títulos de eixos, \textit{tooltips})
+para substituir os nomes técnicos das colunas por descrições compreensíveis.
 
 \subsection{Filtros Hierárquicos na Barra Lateral}
 
@@ -655,19 +789,18 @@ em quatro níveis, onde cada nível restringe as opções do nível subsequente:
     \texttt{aih\_qtd}.
     \item \textbf{Mês} (\texttt{st.multiselect}): igualmente carregado de
     \texttt{load\_filter\_options()}, com opções ordenadas cronologicamente via a
-    função utilitária \texttt{month\_to\_num()}.
+    função utilitária \texttt{month\_to\_num()}, que suporta abreviações inglesas
+    e portuguesas bem como valores numéricos.
     \item \textbf{Unidade da Federação} (\texttt{st.multiselect}): renderizado com
-    labels legíveis no formato ``\textit{SP — São Paulo}'', mapeando internamente para
-    o código de UF utilizado nas consultas SQL.
+    labels legíveis no formato \textit{``SP — São Paulo''}, mapeando internamente
+    para o código de UF utilizado nas consultas SQL.
     \item \textbf{Município} (\texttt{st.multiselect}): carregado dinamicamente pela
     função \texttt{load\_municipality\_options()}, cujas opções variam em função das
     UFs selecionadas no nível superior.
 \end{enumerate}
 
-A dependência entre o filtro de Município e o filtro de UF — a lista de municípios
-disponíveis muda a cada seleção de UF — é gerida pelo mecanismo de reatividade nativo
-do Streamlit: a re-execução do script a cada interação reconstrói automaticamente o
-componente de municípios com as opções atualizadas.
+No modo \textit{offline} (fallback), o filtro de UF é suprimido e o filtro de
+Município é preenchido diretamente a partir do Parquet, sem dependência do PostgreSQL.
 
 \subsection{KPIs com Cálculo de Delta Interperiódico}
 
@@ -690,55 +823,96 @@ Cada KPI exibe adicionalmente um \textbf{delta percentual} calculado em relaçã
 período imediatamente anterior. A função \texttt{previous\_period()} implementa a
 lógica de retrocesso calendárico, tratando corretamente as transições de ano
 (dezembro → novembro do ano corrente, janeiro → dezembro do ano anterior). Os totais
-do período anterior são consultados via \texttt{get\_period\_totals()}, que aplica os
-mesmos filtros geográficos da sessão atual para garantir comparabilidade.
+do período anterior são consultados via \texttt{get\_period\_totals()} (ou
+\texttt{get\_fallback\_period\_totals()} em modo \textit{offline}), que aplica os mesmos
+filtros geográficos da sessão atual para garantir comparabilidade.
 
 \subsection{Abas de Análise}
 
-O conteúdo principal do \textit{dashboard} é organizado em três abas
-(\texttt{st.tabs}), separando categorias distintas de análise:
+O conteúdo do \textit{dashboard} é organizado em quatro abas
+(\texttt{st.tabs}), separando categorias distintas de informação:
+
+\subsubsection*{Aba 0 — 🏠 Introdução}
+
+A aba de introdução é sempre renderizada, mesmo antes de qualquer filtro ser
+selecionado, e não depende de conexão com o banco de dados. Apresenta quatro secções
+principais:
+
+\begin{itemize}
+    \item \textbf{Origem dos Dados} — descreve o SIH/SUS, o portal TabNet e a
+    estratégia de scraping com Playwright.
+    \item \textbf{Pipeline de Engenharia de Dados} — resume as três etapas
+    (Extração, Staging SQLite, Produção PostgreSQL) num layout de três colunas.
+    \item \textbf{Sobre este Aplicativo} — descreve as funcionalidades disponíveis no
+    dashboard: filtros hierárquicos, KPIs, exportação CSV, estatísticas descritivas e
+    gráficos analíticos.
+    \item \textbf{Modo Offline (Fallback)} — documenta ao utilizador final o
+    comportamento da aplicação quando o banco de dados está indisponível, incluindo as
+    funcionalidades que são adaptadas e as que permanecem intactas.
+\end{itemize}
 
 \subsubsection*{Aba A — Lista dos Dados Armazenados}
-Apresenta o DataFrame consolidado resultante da consulta principal, renderizado como
-tabela interativa (\texttt{st.dataframe}) com suporte a ordenação e filtragem na
-interface. Um botão \texttt{st.download\_button} permite a exportação imediata dos
-dados visíveis em formato CSV, com codificação UTF-8, sem exigir interação adicional
-do utilizador.
+
+Apresenta o DataFrame consolidado resultante da consulta principal, com formatação
+numérica brasileira aplicada coluna a coluna (0 casas decimais para contagens,
+2 casas decimais para valores monetários). Um botão \texttt{st.download\_button}
+permite a exportação imediata dos dados visíveis em formato CSV com codificação UTF-8.
+
+Abaixo da tabela de dados é exibido um \textbf{Dicionário de Variáveis} dividido em
+três tabelas: colunas de controlo e metadados, colunas de quantidades (\texttt{qtd\_*})
+e colunas de valores financeiros (\texttt{vl\_*}), utilizando os rótulos do dicionário
+\texttt{COLUMN\_LABELS}.
 
 \subsubsection*{Aba B — Estatísticas Descritivas}
+
 Aplica o método \texttt{DataFrame.describe().T} sobre as colunas métricas (totais e
-colunas de procedimentos individuais), produzindo uma matriz transposta de estatísticas
-descritivas: contagem, média, desvio-padrão, mínimo, quartis e máximo. Três indicadores
-de cardinalidade do recorte são exibidos de forma destacada: número de municípios,
-número de UFs e número de períodos (combinações únicas de ano/mês) no filtro ativo.
+colunas de procedimentos individuais) e enriquece o resultado com três estatísticas
+adicionais: \textbf{variância} (\texttt{var()}), \textbf{assimetria}
+(\texttt{skew()}) e \textbf{curtose} (\texttt{kurt()}), produzindo uma matriz
+transposta completa formatada no locale brasileiro.
+
+Três (ou dois, em modo \textit{offline}) indicadores de cardinalidade do recorte são
+exibidos de forma destacada: número de municípios, número de UFs e número de períodos
+(combinações únicas de ano/mês) no filtro ativo.
 
 \subsubsection*{Aba C — Gráficos Analíticos}
-Esta aba concentra quatro visualizações interativas construídas com a biblioteca
+
+Esta aba concentra cinco visualizações interativas construídas com a biblioteca
 \textbf{Plotly}:
 
 \begin{enumerate}
     \item \textbf{Série Temporal de Duplo Eixo:} gráfico de linhas com marcadores
-    (\texttt{go.Scatter}) com dois eixos Y independentes — quantidade total (eixo
-    primário esquerdo) e valor financeiro total (eixo secundário direito). O eixo
-    temporal é construído convertendo as colunas \texttt{ano} e \texttt{mes} em
-    objetos \texttt{datetime} do Pandas via \texttt{pd.to\_datetime()}, ordenados
-    cronologicamente.
+    (\texttt{go.Scatter}) com dois eixos Y independentes e seletores de coluna para
+    cada eixo. O eixo temporal é construído convertendo as colunas \texttt{ano} e
+    \texttt{mes} em objetos \texttt{datetime} via \texttt{pd.to\_datetime()},
+    ordenados cronologicamente, suportando os mesmos formatos de mês (numérico,
+    abreviação inglesa ou abreviação portuguesa) tratados por \texttt{month\_to\_num()}.
 
-    \item \textbf{Ranking Top 10:} gráfico de barras (\texttt{px.bar}) com a opção
-    de selecionar o nível de agregação (Município ou UF) e a métrica (quantidade ou
-    valor), exibindo os 10 maiores valores do recorte com os rótulos de dados
-    incorporados (\texttt{text\_auto=True}).
+    \item \textbf{Ranking Top 10:} gráfico de barras (\texttt{px.bar}) com seleção de
+    nível de agregação (Município ou UF, este último indisponível em modo
+    \textit{offline}) e de métrica. Sempre opera sobre todos os municípios da UF
+    selecionada, independentemente do filtro de município ativo.
 
     \item \textbf{Scatter Plot de Procedimentos × Valor:} diagrama de dispersão
-    (\texttt{px.scatter}) com um ponto por município (agregado sobre todos os
-    períodos do recorte), revelando a correlação entre volume de procedimentos e
-    valores aprovados, com \textit{tooltip} interativo exibindo o nome do município e
-    da UF.
+    (\texttt{px.scatter}) com seletores de eixo X e Y e escolha do coeficiente de
+    correlação a exibir: \textbf{Pearson} (linear, sensível a outliers) ou
+    \textbf{Spearman} (baseado em postos, robusto a outliers e não-paramétrico).
+    A correlação de Spearman é calculada internamente via correlação de Pearson sobre
+    os postos (\texttt{rank()}), eliminando a necessidade do pacote \texttt{scipy}.
+    O valor do coeficiente é exibido abaixo do gráfico com uma nota metodológica.
 
-    \item \textbf{Donut de Distribuição por Categoria de Procedimento:} gráfico do
-    tipo \textit{pie} com furo central (\texttt{hole=0.45}) exibindo as 10 categorias
-    de procedimento com maior soma acumulada no recorte, com seleção entre análise de
-    quantidades (\texttt{qtd\_*}) ou valores financeiros (\texttt{vl\_*}).
+    \item \textbf{Treemap por Categoria de Procedimento:} gráfico \textit{treemap}
+    (\texttt{px.treemap}) com seleção das colunas de procedimento a incluir via
+    \texttt{st.multiselect}; as colunas excluídas são agrupadas numa categoria
+    ``Outros'' cujo valor é a soma das suas contribuições ao total do recorte.
+    Os percentuais exibidos são sempre relativos ao total acumulado de todas as colunas
+    disponíveis, garantindo consistência ao variar a seleção.
+
+    \item \textbf{Heatmap Sazonal:} mapa de calor (\texttt{go.Heatmap}) com meses
+    no eixo X e, no eixo Y, o ano ou a UF (configurável por rádio; UF indisponível em
+    modo \textit{offline}). A escala de cores \texttt{YlOrRd} destaca visualmente
+    os picos sazonais e quebras de padrão histórico. O eixo de meses usa abreviações
+    em português (Jan--Dez) e opera sempre sobre todos os municípios da UF selecionada.
 \end{enumerate}
 
 \section{Publicação no Streamlit Cloud}
@@ -771,15 +945,27 @@ apresentação completa na forma de um \textit{dashboard} web interativo. A esco
 Streamlit como \textit{framework} permitiu condensar, num código de dimensão reduzida,
 funcionalidades que noutras \textit{stacks} exigiriam a implementação de um
 \textit{backend} REST separado, uma aplicação \textit{frontend} em JavaScript e uma
-camada de autenticação independente. A separação entre a camada de dados
-(\texttt{db.py}) e a camada de apresentação (\texttt{app.py}) conferiu modularidade e
-manutenibilidade ao projeto.
+camada de autenticação independente.
+
+A introdução do módulo \texttt{fallback.py} com dados Parquet locais revelou-se um
+investimento de resiliência essencial: a aplicação continua operacional mesmo na
+ausência de conectividade ao servidor institucional, degradando graciosamente apenas as
+funcionalidades dependentes da dimensão UF. O toggle manual de modo de conexão confere
+flexibilidade adicional para demonstrações e validações offline.
 
 As otimizações implementadas no acesso ao banco de dados — em particular o padrão de
-\textit{Loose Index Scan} via CTE recursiva e o uso de cursores \textit{server-side}
-com \textit{streaming} em lotes — demonstraram ser abordagens essenciais para garantir
-tempos de resposta aceitáveis sobre tabelas de alta cardinalidade, sem necessidade de
-desnormalização ou materialização de vistas pré-calculadas.
+\textit{Loose Index Scan} via CTE recursiva, o uso de cursores \textit{server-side}
+com \textit{streaming} em lotes e a decomposição da consulta consolidada em dois
+estágios — demonstraram ser abordagens essenciais para garantir tempos de resposta
+aceitáveis sobre tabelas de alta cardinalidade, sem necessidade de desnormalização ou
+materialização de vistas pré-calculadas.
+
+A secção de gráficos analíticos evoluiu de quatro para cinco visualizações,
+incorporando o heatmap sazonal para identificação de padrões temporais e substituindo
+o gráfico de donut por um treemap interativo com agrupamento de ``Outros''. O scatter
+plot ganhou suporte ao coeficiente de Spearman para robustez a dados com distribuição
+assimétrica — característica frequente em dados de procedimentos hospitalares, onde
+poucos municípios concentram volumes muito elevados.
 
 O conjunto do projeto — desde a extração automatizada no DATASUS até à publicação
 do \textit{dashboard} analítico — constitui um pipeline de dados de ponta-a-ponta
