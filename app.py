@@ -585,7 +585,13 @@ with tab_kpis:
                 + [c for c in vl_proc_cols if c in df_stats.columns]
             )
             stats_df = df_stats[all_metric_cols].apply(pd.to_numeric, errors="coerce")
-            _stats_display = stats_df.describe().T.map(lambda v: br_format(v, 2))
+            _base = stats_df.describe().T
+            _extra = pd.DataFrame({
+                "variance": stats_df.var(numeric_only=True),
+                "skewness": stats_df.skew(numeric_only=True),
+                "kurtosis": stats_df.kurt(numeric_only=True),
+            })
+            _stats_display = _base.join(_extra).map(lambda v: br_format(v, 2))
             st.dataframe(_stats_display, use_container_width=True)
 
             st.markdown("**Indicadores de referência do recorte atual:**")
@@ -654,16 +660,6 @@ with tab_charts:
             )
             avail_qtd_cols = ["total_qtd"] + [c for c in qtd_proc_cols if c in df_all.columns]
             avail_vl_cols = ["total_vl"] + [c for c in vl_proc_cols if c in df_all.columns]
-
-            # Ticket Médio — caixa de destaque antes do primeiro gráfico
-            _tm_vl = pd.to_numeric(df["total_vl"], errors="coerce").sum()
-            _tm_qtd = pd.to_numeric(df["total_qtd"], errors="coerce").sum()
-            _tm_val = (_tm_vl / _tm_qtd) if _tm_qtd > 0 else 0.0
-            st.metric(
-                label="🏷️ Ticket Médio da Seleção (R$/procedimento)",
-                value=format_currency(_tm_val),
-            )
-            st.divider()
 
             # 1. Série temporal
             st.subheader("1) Série temporal")
