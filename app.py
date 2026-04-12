@@ -344,7 +344,7 @@ with st.sidebar:
         )
         selected_municipios = tuple(mun_label_to_code[lbl] for lbl in selected_mun_labels)
         st.caption(
-            "ℹ️ Os gráficos **Ranking Top 10** e **Scatter Plot** sempre exibem "
+            "ℹ️ Os gráficos **Ranking Top 10**, **Scatter Plot** e **Heatmap Sazonal** sempre exibem "
             "todos os municípios, independentemente deste filtro."
         )
         if not selected_municipios:
@@ -380,7 +380,7 @@ with st.sidebar:
             municipio_label_to_code[label] for label in selected_municipio_labels
         )
         st.caption(
-            "ℹ️ Os gráficos **Ranking Top 10** e **Scatter Plot** sempre exibem "
+            "ℹ️ Os gráficos **Ranking Top 10**, **Scatter Plot** e **Heatmap Sazonal** sempre exibem "
             "todos os municípios da UF selecionada, independentemente deste filtro."
         )
 
@@ -889,7 +889,8 @@ with tab_charts:
             # 5. Heatmap Sazonal
             st.subheader("5) Heatmap Sazonal")
             st.caption(
-                "Mapa de calor mês × ano (ou mês × UF) para identificar sazonalidade e quebras de padrão histórico."
+                "Mapa de calor mês × ano (ou mês × UF) para identificar sazonalidade e quebras de padrão histórico. "
+                "ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município."
             )
             _MONTH_ABBR_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
                                "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
