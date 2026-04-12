@@ -606,6 +606,40 @@ A junção final entre os dados de facto e as informações de dimensão é real
 Python via \texttt{DataFrame.merge()}, após a materialização dos dois conjuntos de
 resultados, garantindo a eficiência da comunicação com o SGBD.
 
+\subsection{Funções Utilitárias e de Suporte}
+
+Além das funções de consulta ao banco, o módulo \texttt{db.py} exporta um conjunto
+de utilitários de suporte utilizados diretamente pelo módulo \texttt{app.py}:
+
+\begin{itemize}
+    \item \texttt{month\_to\_num(mes)} — converte qualquer representação de mês em
+    inteiro (1--12): aceita abreviações em inglês (\textit{"Jun"}), abreviações em
+    português (\textit{"Jun"}), nomes completos em português (\textit{"junho"}) e
+    valores numéricos em formato \texttt{str} (\textit{"6"}). Retorna 0 para entradas
+    inválidas, sem lançar exceção. Utilizada em todo o pipeline de ordenação
+    cronológica do \textit{dashboard}.
+
+    \item \texttt{get\_period\_totals(year, month, selected\_ufs, selected\_municipios)}
+    — consulta ao banco os agregados \texttt{(total\_qtd, total\_vl)} para um único
+    período (ano+mês) respeitando os filtros geográficos ativos. Decorada com
+    \texttt{@st.cache\_data(ttl=900)}, é invocada duas vezes por ciclo de renderização
+    dos KPIs: uma para o período corrente e outra, via \texttt{previous\_period()},
+    para o período anterior.
+
+    \item \texttt{previous\_period(year, month)} — calcula o período imediatamente
+    anterior ao fornecido, tratando corretamente as transições de ano (mês 1 → mês 12
+    do ano anterior). Retorna \texttt{None} quando o ano resultante seria inferior ao
+    limiar mínimo \texttt{MIN\_VALID\_YEAR}, impedindo que o delta dos KPIs seja
+    calculado sobre dados inexistentes.
+
+    \item \texttt{calculate\_average\_ticket(total\_value, total\_quantity)} — calcula
+    o valor médio por procedimento (quociente entre valor total e quantidade total).
+    Utiliza a constante \texttt{EPSILON = 1e-9} como guarda de divisão por zero: se
+    a quantidade for inferior a este limiar, retorna 0.0 em vez de lançar uma exceção
+    de divisão por zero — situação que ocorre quando o recorte de filtros não possui
+    registros de quantidade.
+\end{itemize}
+
 \section{Módulo de Fallback: \texttt{fallback.py}}
 
 Durante o desenvolvimento verificou-se que a dependência exclusiva do servidor
@@ -798,6 +832,8 @@ em quatro níveis, onde cada nível restringe as opções do nível subsequente:
     função \texttt{load\_municipality\_options()}, cujas opções variam em função das
     UFs selecionadas no nível superior.
 \end{enumerate}
+
+Um detalhe comportamental relevante distingue o filtro de UF dos demais: ao contrário dos seletores de Ano e Mês — que inicializam com todas as opções pré-selecionadas por defeito (\texttt{default=options}) —, o filtro de UF não possui valor padrão, iniciando vazio. As três abas de dados (Lista dos Dados Armazenados, Estatísticas Descritivas e Gráficos Analíticos) exibem uma mensagem informativa enquanto nenhuma UF for selecionada, prevenindo a execução de consultas sem qualquer filtro geográfico e potencialmente custosas sobre a totalidade das tabelas fato.
 
 No modo \textit{offline} (fallback), o filtro de UF é suprimido e o filtro de
 Município é preenchido diretamente a partir do Parquet, sem dependência do PostgreSQL.
