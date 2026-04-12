@@ -21,6 +21,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy import text
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -204,26 +205,84 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
     Carrega todas as combinações de Ano, Mês e UF disponíveis no banco.
     Usado para popular os filtros da sidebar.
 
-    Usa três queries leves:
-    - Duas queries de coluna única (ano / mes) em aih_qtd para que o PostgreSQL
-      possa usar índices individuais e evitar ordenação em duas colunas.
-    - Uma query nas tabelas de dimensão para as UFs (tabelas pequenas).
-    O TRIM é feito em Python para não bloquear o uso de índices no banco.
+    Estratégia de extração em batches:
+    - aih_qtd (tabela fato grande): consultas via ``conn.session`` com cursor
+      server-side (``stream_results=True``) e ``partitions()`` para leitura em
+      lotes.  O padrão de "loose index scan" (CTE recursiva) percorre o índice
+      da coluna em O(k·log n), onde k é o número de valores distintos (≈ 5-10
+      anos, 12 meses), evitando varredura completa da tabela.
+    - municipios_ibge / unidade_federacao (tabelas de dimensão pequenas): join
+      simples via ``conn.query()`` – não requerem streaming.
     """
     conn = get_connection()
 
-    # 1. Anos: query de coluna única permite uso de índice em 'ano'
-    years_df = conn.query("SELECT DISTINCT ano FROM aih_qtd WHERE ano IS NOT NULL")
-    years = sorted(years_df["ano"].astype(str).str.strip().dropna().unique().tolist())
+    # Tamanho dos lotes para leitura via cursor server-side
+    _BATCH_SIZE = 50
 
-    # 2. Meses: query de coluna única permite uso de índice em 'mes'
-    months_df = conn.query("SELECT DISTINCT mes FROM aih_qtd WHERE mes IS NOT NULL")
-    months = sorted(
-        months_df["mes"].astype(str).str.strip().dropna().unique().tolist(),
-        key=month_to_num,
+    # SQL: CTE recursiva "loose index scan" – usa apenas k páginas de índice
+    _years_sql = text(
+        """
+        WITH RECURSIVE t(ano) AS (
+            (SELECT ano FROM aih_qtd WHERE ano IS NOT NULL ORDER BY ano LIMIT 1)
+            UNION ALL
+            SELECT (
+                SELECT ano FROM aih_qtd
+                WHERE ano > t.ano AND ano IS NOT NULL
+                ORDER BY ano LIMIT 1
+            )
+            FROM t WHERE t.ano IS NOT NULL
+        )
+        SELECT ano FROM t WHERE ano IS NOT NULL
+        """
     )
 
-    # 3. UFs: join apenas entre tabelas de dimensão (muito menores)
+    _months_sql = text(
+        """
+        WITH RECURSIVE t(mes) AS (
+            (SELECT mes FROM aih_qtd WHERE mes IS NOT NULL ORDER BY mes LIMIT 1)
+            UNION ALL
+            SELECT (
+                SELECT mes FROM aih_qtd
+                WHERE mes > t.mes AND mes IS NOT NULL
+                ORDER BY mes LIMIT 1
+            )
+            FROM t WHERE t.mes IS NOT NULL
+        )
+        SELECT mes FROM t WHERE mes IS NOT NULL
+        """
+    )
+
+    # 1 & 2: anos e meses – extração em batches via cursor server-side
+    years_set: set = set()
+    months_set: set = set()
+
+    with conn.session as session:
+        # -- aih_qtd: anos --
+        years_result = session.execute(
+            _years_sql,
+            execution_options={"stream_results": True, "yield_per": _BATCH_SIZE},
+        )
+        for batch in years_result.partitions(_BATCH_SIZE):
+            for row in batch:
+                val = str(row[0]).strip()
+                if val:
+                    years_set.add(val)
+
+        # -- aih_qtd: meses --
+        months_result = session.execute(
+            _months_sql,
+            execution_options={"stream_results": True, "yield_per": _BATCH_SIZE},
+        )
+        for batch in months_result.partitions(_BATCH_SIZE):
+            for row in batch:
+                val = str(row[0]).strip()
+                if val:
+                    months_set.add(val)
+
+    years = sorted(years_set)
+    months = sorted(months_set, key=month_to_num)
+
+    # 3. UFs: join entre tabelas de dimensão (pequenas – conn.query() é suficiente)
     mapping = get_dimension_mapping()
     uf_query = f"""
         SELECT DISTINCT
