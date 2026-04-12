@@ -363,6 +363,7 @@ with st.sidebar:
         selected_uf_labels = st.multiselect(
             "Unidade da Federação (UF)",
             options=list(uf_label_to_code.keys()),
+            default=list(uf_label_to_code.keys()),
         )
         selected_ufs = tuple(uf_label_to_code[label] for label in selected_uf_labels)
 
@@ -505,7 +506,7 @@ with tab_raw:
                     continue
                 _decimals = 2 if (_col.startswith("vl_") or _col == "total_vl") else 0
                 _df_display_fmt[_col] = _df_display_fmt[_col].apply(br_format, decimals=_decimals)
-            st.dataframe(_df_display_fmt, use_container_width=True)
+            st.dataframe(_df_display_fmt, width="stretch")
 
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False)
@@ -531,19 +532,19 @@ with tab_raw:
             st.caption("**Colunas de controle e metadados** (comuns às duas matrizes)")
             st.dataframe(
                 pd.DataFrame(_meta_ctrl),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
             st.caption("**Matriz de Quantidades** (`aih_qtd`) — colunas `qtd_*`")
             st.dataframe(
                 pd.DataFrame(_meta_qtd),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
             st.caption("**Matriz de Valores Financeiros** (`aih_vl`) — colunas `vl_*`")
             st.dataframe(
                 pd.DataFrame(_meta_vl),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -592,7 +593,7 @@ with tab_kpis:
                 "kurtosis": stats_df.kurt(numeric_only=True),
             })
             _stats_display = _base.join(_extra).map(lambda v: br_format(v, 2))
-            st.dataframe(_stats_display, use_container_width=True)
+            st.dataframe(_stats_display, width="stretch")
 
             st.markdown("**Indicadores de referência do recorte atual:**")
             if _using_fallback:
@@ -709,7 +710,7 @@ with tab_charts:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
-            st.plotly_chart(fig_line, use_container_width=True)
+            st.plotly_chart(fig_line, width="stretch")
 
             # 2. Ranking Top 10
             st.subheader("2) Ranking Top 10")
@@ -753,7 +754,7 @@ with tab_charts:
                 text_auto=True,
             )
             fig_rank.update_layout(xaxis_tickangle=-40)
-            st.plotly_chart(fig_rank, use_container_width=True)
+            st.plotly_chart(fig_rank, width="stretch")
 
             # 3. Scatter Plot
             st.subheader("3) Scatter Plot")
@@ -804,7 +805,7 @@ with tab_charts:
                     hover_data=["municipio_nome", "uf_nome"],
                     labels={scatter_x: col_label(scatter_x), scatter_y: col_label(scatter_y)},
                 )
-            st.plotly_chart(fig_scatter, use_container_width=True)
+            st.plotly_chart(fig_scatter, width="stretch")
             _CORR_METHOD_MAP = {"Pearson": "pearson", "Spearman": "spearman"}
             _cm = _CORR_METHOD_MAP[corr_method]
             if _cm == "spearman":
@@ -876,7 +877,7 @@ with tab_charts:
                         values="valor",
                     )
                     fig_treemap.update_traces(textinfo="label+percent root")
-                    st.plotly_chart(fig_treemap, use_container_width=True)
+                    st.plotly_chart(fig_treemap, width="stretch")
                 else:
                     st.info("Selecione ao menos uma coluna para exibir o treemap.")
             else:
@@ -946,6 +947,6 @@ with tab_charts:
                 yaxis=dict(type="category"),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
-            st.plotly_chart(fig_heatmap, use_container_width=True)
+            st.plotly_chart(fig_heatmap, width="stretch")
 
 

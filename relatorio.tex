@@ -764,7 +764,7 @@ e o dicionário de variáveis.
 A identidade visual da aplicação foi configurada no ficheiro
 \texttt{.streamlit/config.toml}, definindo uma paleta de cores corporativa (azul
 institucional \texttt{\#0066CC} como cor primária, fundo branco e texto escuro
-\texttt{\#1A1A2E}), além de desativar a telemetria de uso do Streamlit:
+\texttt{\#1A1A2E}):
 
 \begin{lstlisting}[language=Python, numbers=none]
 [theme]
@@ -773,10 +773,11 @@ backgroundColor          = "#FFFFFF"
 secondaryBackgroundColor = "#F0F2F6"
 textColor                = "#1A1A2E"
 font                     = "sans serif"
-
-[server]
-enableStatistics = false
 \end{lstlisting}
+
+\textbf{Nota:} o bloco \texttt{[server]} com a chave \texttt{enableStatistics = false}
+foi removido do ficheiro, pois essa chave foi descontinuada nas versões recentes do
+Streamlit e passou a gerar um aviso de configuração inválida ao iniciar o servidor.
 
 A página foi configurada com layout largo (\texttt{layout="wide"}) para maximizar a
 área de visualização dos gráficos, e o ícone e título da aba do navegador foram
@@ -833,7 +834,12 @@ em quatro níveis, onde cada nível restringe as opções do nível subsequente:
     UFs selecionadas no nível superior.
 \end{enumerate}
 
-Um detalhe comportamental relevante distingue o filtro de UF dos demais: ao contrário dos seletores de Ano e Mês — que inicializam com todas as opções pré-selecionadas por defeito (\texttt{default=options}) —, o filtro de UF não possui valor padrão, iniciando vazio. As três abas de dados (Lista dos Dados Armazenados, Estatísticas Descritivas e Gráficos Analíticos) exibem uma mensagem informativa enquanto nenhuma UF for selecionada, prevenindo a execução de consultas sem qualquer filtro geográfico e potencialmente custosas sobre a totalidade das tabelas fato.
+O filtro de UF inicializa com todas as opções pré-selecionadas por defeito
+(\texttt{default=list(uf\_label\_to\_code.keys())}), à semelhança dos seletores de
+Ano e Mês, tornando o painel imediatamente funcional na primeira carga sem necessidade
+de interação manual. Caso o utilizador desmarque todas as UFs, as três abas de dados
+exibem uma mensagem de aviso, prevenindo a execução de consultas sem qualquer filtro
+geográfico sobre as tabelas fato.
 
 No modo \textit{offline} (fallback), o filtro de UF é suprimido e o filtro de
 Município é preenchido diretamente a partir do Parquet, sem dependência do PostgreSQL.
