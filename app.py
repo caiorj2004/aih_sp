@@ -310,6 +310,7 @@ if _using_fallback and _fb_municipios is not None:
         selected_mun_labels = st.multiselect(
             "Município",
             options=list(mun_label_to_code.keys()),
+            default=list(mun_label_to_code.keys()),
         )
         selected_municipios = tuple(mun_label_to_code[lbl] for lbl in selected_mun_labels)
         st.caption(
@@ -344,6 +345,7 @@ elif _db_error is None and _years and _months and _uf_options is not None:
         selected_municipio_labels = st.multiselect(
             "Município",
             options=list(municipio_label_to_code.keys()),
+            default=list(municipio_label_to_code.keys()),
         )
         selected_municipios = tuple(
             municipio_label_to_code[label] for label in selected_municipio_labels
@@ -731,9 +733,14 @@ with tab_charts:
                 )
             st.plotly_chart(fig_scatter, use_container_width=True)
             _CORR_METHOD_MAP = {"Pearson": "pearson", "Spearman": "spearman"}
-            _corr_val = scatter_df[scatter_x].corr(
-                scatter_df[scatter_y], method=_CORR_METHOD_MAP[corr_method]
-            )
+            _cm = _CORR_METHOD_MAP[corr_method]
+            if _cm == "spearman":
+                # Compute Spearman via rank-based Pearson to avoid requiring scipy
+                _s1 = scatter_df[scatter_x].rank()
+                _s2 = scatter_df[scatter_y].rank()
+                _corr_val = _s1.corr(_s2)
+            else:
+                _corr_val = scatter_df[scatter_x].corr(scatter_df[scatter_y])
             if pd.notna(_corr_val):
                 st.caption(
                     f"Correlação de {corr_method} entre {col_label(scatter_x)} e "
