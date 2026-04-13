@@ -871,12 +871,17 @@ with tab_charts:
                             "valor": [r[1] for r in rows],
                         }
                     )
+                    treemap_data["valor_fmt"] = treemap_data["valor"].apply(br_format)
                     fig_treemap = px.treemap(
                         treemap_data,
                         path=["categoria"],
                         values="valor",
+                        custom_data=["valor_fmt"],
                     )
-                    fig_treemap.update_traces(textinfo="label+percent root")
+                    fig_treemap.update_traces(
+                        textinfo="label+percent root",
+                        hovertemplate="<b>%{label}</b><br>Valor: %{customdata[0]}<br>%{percentRoot:.1%}<extra></extra>",
+                    )
                     st.plotly_chart(fig_treemap, width="stretch")
                 else:
                     st.info("Selecione ao menos uma coluna para exibir o treemap.")
@@ -932,13 +937,15 @@ with tab_charts:
             _hm_pivot = _hm_pivot.reindex(columns=range(1, 13), fill_value=0)
             _hm_pivot.columns = _MONTH_ABBR_PT
 
+            _hm_z_fmt = [[br_format(v) for v in row] for row in _hm_pivot.values]
             fig_heatmap = go.Figure(
                 go.Heatmap(
                     z=_hm_pivot.values,
                     x=_MONTH_ABBR_PT,
                     y=[str(int(float(v))) if _hm_group_col == "ano" else str(v) for v in _hm_pivot.index],
                     colorscale="YlOrRd",
-                    hovertemplate="%{y} — %{x}: %{z:,.0f}<extra></extra>",
+                    customdata=_hm_z_fmt,
+                    hovertemplate="%{y} — %{x}: %{customdata}<extra></extra>",
                 )
             )
             fig_heatmap.update_layout(
