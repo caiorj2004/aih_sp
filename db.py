@@ -44,6 +44,17 @@ _PT_MONTH_MAP: Dict[str, int] = {
     "outubro": 10, "novembro": 11, "dezembro": 12,
 }
 
+@st.cache_resource(show_spinner="Verificando conexão com o banco...")
+def get_connection():
+    """
+    Retorna a conexão com lógica de resiliência.
+    """
+    return st.connection(
+        "postgresql", 
+        type="sql",
+        pool_pre_ping=True,  # Testa a conexão antes de cada uso (SELECT 1)
+        pool_recycle=1800    # Renova a conexão a cada 30 minutos
+    )
 
 def month_to_num(mes: str) -> int:
     """Converte abreviação de mês ('Jun', 'Jun', 'Fev', 'fevereiro') ou string numérica ('6') para inteiro 1-12."""
@@ -334,107 +345,91 @@ def load_consolidated_data(
     selected_ufs: Tuple[str, ...],
     selected_municipios: Tuple[str, ...],
 ) -> pd.DataFrame:
-    """
-    Executa o JOIN principal entre aih_qtd, aih_vl, municipios_ibge e
-    unidade_federacao aplicando os filtros selecionados pelo usuário.
-    Retorna DataFrame consolidado com métricas e dimensões geográficas.
+    # 1. Alteração: Usa a nova função resiliente
+    try:
+        conn = get_connection() 
+        mapping = get_dimension_mapping()
+        qtd_proc_cols, vl_proc_cols = get_procedure_columns()
 
-    A consulta é dividida em duas etapas para evitar que o PostgreSQL precise
-    materializar o produto cartesiano das tabelas fato antes de aplicar o
-    filtro geográfico (UF), o que esgotaria o espaço temporário em disco:
+        if not selected_years or not selected_months or not selected_ufs:
+            return pd.DataFrame()
 
-    1. Resolução dos municípios: consulta apenas as tabelas de dimensão
-       (municipios_ibge e unidade_federacao) para obter a lista de
-       cod_municipio válidos para as UFs selecionadas.
-    2. Consulta das tabelas fato (aih_qtd e aih_vl) usando o resultado
-       anterior como filtro direto na coluna cod_municipio, permitindo ao
-       PostgreSQL usar índices e evitar varreduras completas.
-    """
-    conn = get_connection()
-    mapping = get_dimension_mapping()
-    qtd_proc_cols, vl_proc_cols = get_procedure_columns()
+        # Etapa 1: resolver municípios
+        dim_params: Dict[str, object] = {}
+        uf_filter = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", dim_params)
+        municipio_filter = _build_in_clause(
+            f"CAST(m.{mapping['municipio_code_col']} AS TEXT)", selected_municipios, "mun", dim_params
+        )
 
-    # Retorno rápido para evitar query sem filtros de período ou UF
-    if not selected_years or not selected_months or not selected_ufs:
-        return pd.DataFrame()
+        dim_query = f"""
+            SELECT DISTINCT
+                CAST(m.{mapping['municipio_code_col']} AS TEXT) AS cod_municipio,
+                CAST(m.{mapping['municipio_name_col']} AS TEXT) AS municipio_nome,
+                CAST(m.uf_codigo AS TEXT)                       AS uf_codigo,
+                CAST(u.{mapping['uf_sigla_col']} AS TEXT)       AS uf_sigla,
+                CAST(u.{mapping['uf_name_col']} AS TEXT)        AS uf_nome
+            FROM municipios_ibge m
+            JOIN unidade_federacao u
+              ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)
+            WHERE 1=1
+            {uf_filter}
+            {municipio_filter}
+        """
+        # 2. Alteração: Adicionado ttl=0 para não criar cache sobre cache
+        dim_df = conn.query(dim_query, params=dim_params, ttl=0)
 
-    # ------------------------------------------------------------------
-    # Etapa 1: resolver municípios e dados de dimensão
-    # ------------------------------------------------------------------
-    dim_params: Dict[str, object] = {}
-    uf_filter = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", dim_params)
-    municipio_filter = _build_in_clause(
-        f"CAST(m.{mapping['municipio_code_col']} AS TEXT)", selected_municipios, "mun", dim_params
-    )
+        if dim_df.empty:
+            return pd.DataFrame()
 
-    dim_query = f"""
-        SELECT DISTINCT
-            CAST(m.{mapping['municipio_code_col']} AS TEXT) AS cod_municipio,
-            CAST(m.{mapping['municipio_name_col']} AS TEXT) AS municipio_nome,
-            CAST(m.uf_codigo AS TEXT)                       AS uf_codigo,
-            CAST(u.{mapping['uf_sigla_col']} AS TEXT)       AS uf_sigla,
-            CAST(u.{mapping['uf_name_col']} AS TEXT)        AS uf_nome
-        FROM municipios_ibge m
-        JOIN unidade_federacao u
-          ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)
-        WHERE 1=1
-        {uf_filter}
-        {municipio_filter}
-    """
-    dim_df = conn.query(dim_query, params=dim_params)
+        cod_municipio_list = tuple(dim_df["cod_municipio"].tolist())
 
-    if dim_df.empty:
-        return pd.DataFrame()
+        # Etapa 2: consulta das tabelas fato
+        qtd_sql = ",\n            ".join([f"q.{col} AS {col}" for col in qtd_proc_cols])
+        vl_sql = ",\n            ".join([f"v.{col} AS {col}" for col in vl_proc_cols])
+        extra_cols = ",\n            ".join([c for c in [qtd_sql, vl_sql] if c])
+        if extra_cols:
+            extra_cols = ",\n            " + extra_cols
 
-    cod_municipio_list = tuple(dim_df["cod_municipio"].tolist())
+        fact_params: Dict[str, object] = {}
+        year_filter = _build_in_clause("TRIM(q.ano)", selected_years, "ano", fact_params)
+        month_filter = _build_in_clause("TRIM(q.mes)", selected_months, "mes", fact_params)
+        mun_filter = _build_in_clause(
+            "CAST(q.cod_municipio AS TEXT)", cod_municipio_list, "cod", fact_params
+        )
 
-    # ------------------------------------------------------------------
-    # Etapa 2: consulta das tabelas fato com filtro direto em cod_municipio
-    # ------------------------------------------------------------------
-    qtd_sql = ",\n            ".join([f"q.{col} AS {col}" for col in qtd_proc_cols])
-    vl_sql = ",\n            ".join([f"v.{col} AS {col}" for col in vl_proc_cols])
-    extra_cols = ",\n            ".join([c for c in [qtd_sql, vl_sql] if c])
-    if extra_cols:
-        extra_cols = ",\n            " + extra_cols
+        fact_query = f"""
+            SELECT
+                TRIM(q.ano)                   AS ano,
+                TRIM(q.mes)                   AS mes,
+                CAST(q.cod_municipio AS TEXT) AS cod_municipio,
+                q.total                       AS total_qtd,
+                v.total                       AS total_vl
+                {extra_cols}
+            FROM aih_qtd q
+            JOIN aih_vl v
+                ON  v.ano           = q.ano
+                AND v.mes           = q.mes
+                AND v.cod_municipio = q.cod_municipio
+            WHERE 1=1
+            {year_filter}
+            {month_filter}
+            {mun_filter}
+        """
+        fact_df = conn.query(fact_query, params=fact_params, ttl=0)
 
-    fact_params: Dict[str, object] = {}
-    year_filter = _build_in_clause("TRIM(q.ano)", selected_years, "ano", fact_params)
-    month_filter = _build_in_clause("TRIM(q.mes)", selected_months, "mes", fact_params)
-    mun_filter = _build_in_clause(
-        "CAST(q.cod_municipio AS TEXT)", cod_municipio_list, "cod", fact_params
-    )
+        if fact_df.empty:
+            return pd.DataFrame()
 
-    fact_query = f"""
-        SELECT
-            TRIM(q.ano)                   AS ano,
-            TRIM(q.mes)                   AS mes,
-            CAST(q.cod_municipio AS TEXT) AS cod_municipio,
-            q.total                       AS total_qtd,
-            v.total                       AS total_vl
-            {extra_cols}
-        FROM aih_qtd q
-        JOIN aih_vl v
-            ON  v.ano           = q.ano
-            AND v.mes           = q.mes
-            AND v.cod_municipio = q.cod_municipio
-        WHERE 1=1
-        {year_filter}
-        {month_filter}
-        {mun_filter}
-    """
-    fact_df = conn.query(fact_query, params=fact_params)
+        df = fact_df.merge(dim_df, on="cod_municipio", how="left")
+        df["total_qtd"] = pd.to_numeric(df["total_qtd"], errors="coerce")
+        df["total_vl"] = pd.to_numeric(df["total_vl"], errors="coerce")
 
-    if fact_df.empty:
-        return pd.DataFrame()
+        return df.sort_values(["ano", "mes", "uf_nome", "municipio_nome"]).reset_index(drop=True)
 
-    # ------------------------------------------------------------------
-    # Combina dados de fato com dados de dimensão via merge em Python
-    # ------------------------------------------------------------------
-    df = fact_df.merge(dim_df, on="cod_municipio", how="left")
-    df["total_qtd"] = pd.to_numeric(df["total_qtd"], errors="coerce")
-    df["total_vl"] = pd.to_numeric(df["total_vl"], errors="coerce")
-
-    return df.sort_values(["ano", "mes", "uf_nome", "municipio_nome"]).reset_index(drop=True)
+    except Exception as e:
+        # 3. Alteração: Se der erro de banco, limpa o recurso de conexão para a próxima tentativa
+        st.cache_resource.clear()
+        raise e
 
 
 @st.cache_data(ttl=900)
