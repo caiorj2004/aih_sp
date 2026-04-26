@@ -44,17 +44,13 @@ _PT_MONTH_MAP: Dict[str, int] = {
     "outubro": 10, "novembro": 11, "dezembro": 12,
 }
 
-@st.cache_resource(show_spinner="Verificando conexão com o banco...")
+@st.cache_resource(show_spinner="Verificando conexão...")
 def get_connection():
     """
-    Retorna a conexão com lógica de resiliência.
+    Retorna a conexão. Removidos parâmetros que podem conflitar com certas 
+    versões do driver local, mantendo apenas o essencial.
     """
-    return st.connection(
-        "postgresql", 
-        type="sql",
-        pool_pre_ping=True,  # Testa a conexão antes de cada uso (SELECT 1)
-        pool_recycle=1800    # Renova a conexão a cada 30 minutos
-    )
+    return st.connection("postgresql", type="sql")
 
 def month_to_num(mes: str) -> int:
     """Converte abreviação de mês ('Jun', 'Jun', 'Fev', 'fevereiro') ou string numérica ('6') para inteiro 1-12."""
