@@ -94,21 +94,22 @@ def get_connection():
 # ---------------------------------------------------------------------------
 
 
-def _build_in_clause(column_name: str, values: Iterable[str], param_prefix: str, params: dict) -> str:
-    """Versão simplificada para evitar erros de tradução de parâmetros."""
+def _build_in_clause(column_name: str, values: Iterable[str], param_prefix: str, params_dict: dict) -> str:
+    """
+    Constrói cláusula IN compatível com SQLAlchemy (usando :param).
+    """
     if not values:
         return ""
-    # Transformamos em lista para garantir ordem
+    
     val_list = list(values)
-    # Criamos placeholders estilo %s que o driver PostgreSQL entende nativamente
-    placeholders = ", ".join(["%s"] * len(val_list))
+    placeholders = []
     
-    # Adicionamos à lista de parâmetros global (usaremos uma lista em vez de dict)
-    if 'query_params' not in params:
-        params['query_params'] = []
-    params['query_params'].extend(val_list)
-    
-    return f"AND {column_name} IN ({placeholders})"
+    for i, val in enumerate(val_list):
+        key = f"{param_prefix}_{i}"
+        placeholders.append(f":{key}")
+        params_dict[key] = str(val) # Força string para evitar erro de tipo
+        
+    return f"AND {column_name} IN ({', '.join(placeholders)})"
 
 
 def _first_existing(candidates: List[str], columns: List[str], fallback: str) -> str:
@@ -304,32 +305,30 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
     return years, months, uf_df
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=3600)
 def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
-    """
-    Carrega municípios filtrados pelas UFs selecionadas.
-    Filtro hierárquico: UF → Município.
-    """
     conn = get_connection()
     mapping = get_dimension_mapping()
+    params = {}
+    
+    # Se não houver UF selecionada, retorna vazio para evitar erro de SQL
+    if not selected_ufs:
+        return pd.DataFrame(columns=["cod_municipio", "municipio_nome", "uf_codigo"])
 
-    params: Dict[str, object] = {}
     uf_filter = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", params)
 
     query = f"""
         SELECT DISTINCT
-            CAST(m.{mapping['municipio_code_col']} AS TEXT)                AS cod_municipio,
-            CAST(m.{mapping['municipio_name_col']} AS TEXT)         AS municipio_nome,
-            CAST(m.uf_codigo AS TEXT)                               AS uf_codigo
+            CAST(m.{mapping['municipio_code_col']} AS TEXT) AS cod_municipio,
+            CAST(m.{mapping['municipio_name_col']} AS TEXT) AS municipio_nome,
+            CAST(m.uf_codigo AS TEXT)                      AS uf_codigo
         FROM municipios_ibge m
         WHERE 1=1
         {uf_filter}
         ORDER BY municipio_nome, cod_municipio
     """
+    # O Streamlit converterá o dict 'params' para os binds :uf_0, :uf_1, etc.
     return conn.query(query, params=params)
-
-
-import gc
 
 def load_consolidated_data(
     selected_years: Tuple[str, ...],
@@ -340,12 +339,11 @@ def load_consolidated_data(
     try:
         conn = get_connection()
         mapping = get_dimension_mapping()
+        params = {}
         
-        # Etapa 1: Resolver Municípios e UFs (Dimensões)
-        dim_params_list = []
-        
-        uf_clause = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, dim_params_list)
-        mun_clause = _build_in_clause(f"m.{mapping['municipio_code_col']}", selected_municipios, dim_params_list)
+        # Etapa 1: Dimensões
+        uf_clause = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", params)
+        mun_clause = _build_in_clause(f"m.{mapping['municipio_code_col']}", selected_municipios, "mun", params)
 
         dim_query = f"""
             SELECT DISTINCT
@@ -357,20 +355,16 @@ def load_consolidated_data(
             JOIN unidade_federacao u ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)
             WHERE 1=1 {uf_clause} {mun_clause}
         """
-        
-        # Passamos os parâmetros como tupla para garantir imutabilidade no driver
-        dim_df = conn.query(dim_query, params=tuple(dim_params_list))
-        
-        if dim_df.empty:
-            return pd.DataFrame()
+        dim_df = conn.query(dim_query, params=params)
+        if dim_df.empty: return pd.DataFrame()
 
-        # Etapa 2: Consultar Tabelas Fato (Pesado)
-        fact_params_list = []
-        y_c = _build_in_clause("q.ano", selected_years, fact_params_list)
-        m_c = _build_in_clause("q.mes", selected_months, fact_params_list)
+        # Etapa 2: Fato (Limpamos params para a nova query)
+        f_params = {}
+        y_c = _build_in_clause("q.ano", selected_years, "yr", f_params)
+        m_c = _build_in_clause("q.mes", selected_months, "mo", f_params)
         
-        cod_list = tuple(dim_df["cod_municipio"].astype(str).tolist())
-        c_c = _build_in_clause("q.cod_municipio", cod_list, fact_params_list)
+        cod_list = tuple(dim_df["cod_municipio"].astype(str).unique())
+        c_c = _build_in_clause("q.cod_municipio", cod_list, "cod", f_params)
 
         fact_query = f"""
             SELECT 
@@ -381,25 +375,17 @@ def load_consolidated_data(
             JOIN aih_vl v ON v.ano = q.ano AND v.mes = q.mes AND v.cod_municipio = q.cod_municipio
             WHERE 1=1 {y_c} {m_c} {c_c}
         """
-        
-        fact_df = conn.query(fact_query, params=tuple(fact_params_list))
-        
-        if fact_df.empty:
-            return pd.DataFrame()
+        fact_df = conn.query(fact_query, params=f_params)
+        if fact_df.empty: return pd.DataFrame()
 
-        # Merge final
         df = fact_df.merge(dim_df, on="cod_municipio", how="left")
         
-        # Limpeza agressiva de memória
-        del fact_df
-        del dim_df
+        del fact_df, dim_df
         gc.collect() 
 
-        # Ordenação final para o gráfico
         return df.sort_values(["ano", "mes", "uf_nome", "municipio_nome"]).reset_index(drop=True)
 
     except Exception as e:
-        # Se houver erro de banco, limpamos o recurso para a próxima tentativa
         st.cache_resource.clear()
         raise e
 
