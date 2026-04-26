@@ -289,22 +289,23 @@ _fb_years: list = []
 _fb_months: list = []
 
 try:
-    # 1. Tenta pegar a conexão resiliente
-    _conn_test = get_connection()
-    # 2. Força um teste real de 'ping' no banco
-    _conn_test.query("SELECT 1", ttl=0) 
-    
-    _years, _months, _uf_options = load_filter_options()
+    if not _using_fallback:
+        # Apenas tenta obter a conexão. O Streamlit já valida o segredo aqui.
+        _conn = get_connection()
+        # Carrega as opções. Se o banco estiver fora, o erro vai para o 'except'
+        _years, _months, _uf_options = load_filter_options()
+    else:
+        raise ConnectionError("Modo manual de fallback ativo")
 except Exception as exc:
     _db_error = exc
-    # Se o banco falhar, limpamos o cache para não travar na próxima tentativa
-    st.cache_resource.clear() 
+    # Limpa o cache para garantir que uma tentativa futura não use lixo
+    st.cache_resource.clear()
     try:
         _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
         _years, _months = _fb_years, _fb_months
         _using_fallback = True
     except Exception:
-        pass  # both DB and fallback unavailable
+        pass
 
 # Pre-load fallback options when DB is available so the connection toggle works
 if _db_error is None:
