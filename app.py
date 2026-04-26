@@ -289,9 +289,16 @@ _fb_years: list = []
 _fb_months: list = []
 
 try:
+    # 1. Tenta pegar a conexão resiliente
+    _conn_test = get_connection()
+    # 2. Força um teste real de 'ping' no banco
+    _conn_test.query("SELECT 1", ttl=0) 
+    
     _years, _months, _uf_options = load_filter_options()
 except Exception as exc:
     _db_error = exc
+    # Se o banco falhar, limpamos o cache para não travar na próxima tentativa
+    st.cache_resource.clear() 
     try:
         _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
         _years, _months = _fb_years, _fb_months
