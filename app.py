@@ -290,17 +290,17 @@ _fb_months: list = []
 
 try:
     if not _using_fallback:
-        # Apenas chamamos a função, se o banco estiver inacessível, 
-        # o erro será capturado e o app entrará em modo fallback.
+        # Tenta carregar as opções do banco
         _years, _months, _uf_options = load_filter_options()
     else:
-        # Se o usuário ativou o toggle manual, carregamos o fallback
-        _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
-        _years, _months = _fb_years, _fb_months
-        _using_fallback = True
+        # Se for fallback manual (toggle), força o erro para cair no except abaixo
+        raise ConnectionError("Modo Fallback manual ativado")
 except Exception as exc:
     _db_error = exc
-    st.cache_resource.clear() # Garante que a conexão ruim saia da memória
+    # CRITICAL: Remove a conexão problemática do cache para que a 
+    # próxima tentativa crie uma do zero
+    st.cache_resource.clear()
+    
     try:
         _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
         _years, _months = _fb_years, _fb_months
