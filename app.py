@@ -290,16 +290,17 @@ _fb_months: list = []
 
 try:
     if not _using_fallback:
-        # Apenas tenta obter a conexão. O Streamlit já valida o segredo aqui.
-        _conn = get_connection()
-        # Carrega as opções. Se o banco estiver fora, o erro vai para o 'except'
+        # Apenas chamamos a função, se o banco estiver inacessível, 
+        # o erro será capturado e o app entrará em modo fallback.
         _years, _months, _uf_options = load_filter_options()
     else:
-        raise ConnectionError("Modo manual de fallback ativo")
+        # Se o usuário ativou o toggle manual, carregamos o fallback
+        _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
+        _years, _months = _fb_years, _fb_months
+        _using_fallback = True
 except Exception as exc:
     _db_error = exc
-    # Limpa o cache para garantir que uma tentativa futura não use lixo
-    st.cache_resource.clear()
+    st.cache_resource.clear() # Garante que a conexão ruim saia da memória
     try:
         _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
         _years, _months = _fb_years, _fb_months
