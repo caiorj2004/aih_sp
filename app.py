@@ -710,7 +710,7 @@ with tab_charts:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
-            st.plotly_chart(fig_line, width="stretch")
+            st.plotly_chart(fig_line, use_container_width=True)
 
             # 2. Ranking Top 10
             st.subheader("2) Ranking Top 10")
@@ -754,7 +754,7 @@ with tab_charts:
                 text_auto=True,
             )
             fig_rank.update_layout(xaxis_tickangle=-40)
-            st.plotly_chart(fig_rank, width="stretch")
+            st.plotly_chart(fig_rank, use_container_width=True)
 
             # 3. Scatter Plot
             st.subheader("3) Scatter Plot")
@@ -805,7 +805,7 @@ with tab_charts:
                     hover_data=["municipio_nome", "uf_nome"],
                     labels={scatter_x: col_label(scatter_x), scatter_y: col_label(scatter_y)},
                 )
-            st.plotly_chart(fig_scatter, width="stretch")
+            st.plotly_chart(fig_scatter, use_container_width=True)
             _CORR_METHOD_MAP = {"Pearson": "pearson", "Spearman": "spearman"}
             _cm = _CORR_METHOD_MAP[corr_method]
             if _cm == "spearman":
@@ -882,7 +882,7 @@ with tab_charts:
                         textinfo="label+percent root",
                         hovertemplate="<b>%{label}</b><br>Valor: %{customdata[0]}<br>%{percentRoot:.1%}<extra></extra>",
                     )
-                    st.plotly_chart(fig_treemap, width="stretch")
+                    st.plotly_chart(fig_treemap, use_container_width=True)
                 else:
                     st.info("Selecione ao menos uma coluna para exibir o treemap.")
             else:
@@ -954,6 +954,6 @@ with tab_charts:
                 yaxis=dict(type="category"),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
-            st.plotly_chart(fig_heatmap, width="stretch")
+            st.plotly_chart(fig_heatmap, use_container_width=True)
 
 
