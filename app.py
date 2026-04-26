@@ -290,21 +290,17 @@ _fb_months: list = []
 
 try:
     if not _using_fallback:
-        # Tenta carregar as opções do banco
+        # Tenta carregar com um timeout implícito ao não usar caches eternos
         _years, _months, _uf_options = load_filter_options()
     else:
-        # Se for fallback manual (toggle), força o erro para cair no except abaixo
-        raise ConnectionError("Modo Fallback manual ativado")
+        raise ConnectionError("Modo Fallback")
 except Exception as exc:
     _db_error = exc
-    # CRITICAL: Remove a conexão problemática do cache para que a 
-    # próxima tentativa crie uma do zero
-    st.cache_resource.clear()
-    
+    _using_fallback = True
+    # Se o banco falhar, tentamos o fallback imediatamente
     try:
         _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
         _years, _months = _fb_years, _fb_months
-        _using_fallback = True
     except Exception:
         pass
 
