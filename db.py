@@ -94,24 +94,21 @@ def get_connection():
 # ---------------------------------------------------------------------------
 
 
-def _build_in_clause(
-    column_sql: str,
-    values: Iterable,
-    prefix: str,
-    params: Dict[str, object],
-) -> str:
-    """Gera cláusula SQL ' AND col IN (:p_0, :p_1, ...)' com parâmetros nomeados."""
-    values = list(values)
+def _build_in_clause(column_name: str, values: Iterable[str], param_prefix: str, params: dict) -> str:
+    """Versão simplificada para evitar erros de tradução de parâmetros."""
     if not values:
         return ""
-
-    placeholders = []
-    for index, value in enumerate(values):
-        key = f"{prefix}_{index}"
-        params[key] = value
-        placeholders.append(f":{key}")
-
-    return f" AND {column_sql} IN ({', '.join(placeholders)}) "
+    # Transformamos em lista para garantir ordem
+    val_list = list(values)
+    # Criamos placeholders estilo %s que o driver PostgreSQL entende nativamente
+    placeholders = ", ".join(["%s"] * len(val_list))
+    
+    # Adicionamos à lista de parâmetros global (usaremos uma lista em vez de dict)
+    if 'query_params' not in params:
+        params['query_params'] = []
+    params['query_params'].extend(val_list)
+    
+    return f"AND {column_name} IN ({placeholders})"
 
 
 def _first_existing(candidates: List[str], columns: List[str], fallback: str) -> str:
@@ -332,6 +329,8 @@ def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
     return conn.query(query, params=params)
 
 
+import gc
+
 def load_consolidated_data(
     selected_years: Tuple[str, ...],
     selected_months: Tuple[str, ...],
@@ -342,31 +341,37 @@ def load_consolidated_data(
         conn = get_connection()
         mapping = get_dimension_mapping()
         
-        # Filtro de dimensões primeiro (rápido)
-        dim_params = {}
-        uf_clause = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", dim_params)
-        mun_clause = _build_in_clause(f"m.{mapping['municipio_code_col']}", selected_municipios, "mun", dim_params)
+        # Etapa 1: Resolver Municípios e UFs (Dimensões)
+        dim_params_list = []
+        
+        uf_clause = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, dim_params_list)
+        mun_clause = _build_in_clause(f"m.{mapping['municipio_code_col']}", selected_municipios, dim_params_list)
 
         dim_query = f"""
-            SELECT 
+            SELECT DISTINCT
                 m.{mapping['municipio_code_col']} AS cod_municipio,
                 m.{mapping['municipio_name_col']} AS municipio_nome,
-                u.{mapping['uf_sigla_col']} AS uf_sigla
+                u.{mapping['uf_sigla_col']} AS uf_sigla,
+                u.{mapping['uf_name_col']} AS uf_nome
             FROM municipios_ibge m
-            JOIN unidade_federacao u ON u.co_uf_prova = m.uf_codigo
+            JOIN unidade_federacao u ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)
             WHERE 1=1 {uf_clause} {mun_clause}
         """
-        dim_df = conn.query(dim_query, params=dim_params)
-        if dim_df.empty: return pd.DataFrame()
+        
+        # Passamos os parâmetros como tupla para garantir imutabilidade no driver
+        dim_df = conn.query(dim_query, params=tuple(dim_params_list))
+        
+        if dim_df.empty:
+            return pd.DataFrame()
 
-        # Filtro da Fato (Pesado)
-        fact_params = {}
-        y_c = _build_in_clause("q.ano", selected_years, "y", fact_params)
-        m_c = _build_in_clause("q.mes", selected_months, "m", fact_params)
-        cod_list = tuple(dim_df["cod_municipio"].tolist())
-        c_c = _build_in_clause("q.cod_municipio", cod_list, "c", fact_params)
+        # Etapa 2: Consultar Tabelas Fato (Pesado)
+        fact_params_list = []
+        y_c = _build_in_clause("q.ano", selected_years, fact_params_list)
+        m_c = _build_in_clause("q.mes", selected_months, fact_params_list)
+        
+        cod_list = tuple(dim_df["cod_municipio"].astype(str).tolist())
+        c_c = _build_in_clause("q.cod_municipio", cod_list, fact_params_list)
 
-        # Selecionamos APENAS o necessário e forçamos float32 para economizar RAM
         fact_query = f"""
             SELECT 
                 q.ano, q.mes, q.cod_municipio,
@@ -376,19 +381,25 @@ def load_consolidated_data(
             JOIN aih_vl v ON v.ano = q.ano AND v.mes = q.mes AND v.cod_municipio = q.cod_municipio
             WHERE 1=1 {y_c} {m_c} {c_c}
         """
-        fact_df = conn.query(fact_query, params=fact_params)
-        if fact_df.empty: return pd.DataFrame()
+        
+        fact_df = conn.query(fact_query, params=tuple(fact_params_list))
+        
+        if fact_df.empty:
+            return pd.DataFrame()
 
-        # Merge e limpeza imediata
+        # Merge final
         df = fact_df.merge(dim_df, on="cod_municipio", how="left")
         
-        # Coleta de lixo para liberar RAM de objetos temporários
+        # Limpeza agressiva de memória
         del fact_df
         del dim_df
         gc.collect() 
 
-        return df
+        # Ordenação final para o gráfico
+        return df.sort_values(["ano", "mes", "uf_nome", "municipio_nome"]).reset_index(drop=True)
+
     except Exception as e:
+        # Se houver erro de banco, limpamos o recurso para a próxima tentativa
         st.cache_resource.clear()
         raise e
 
