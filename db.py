@@ -44,12 +44,9 @@ _PT_MONTH_MAP: Dict[str, int] = {
     "outubro": 10, "novembro": 11, "dezembro": 12,
 }
 
-@st.cache_resource(show_spinner="Verificando conexão...")
+@st.cache_resource
 def get_connection():
-    """
-    Retorna a conexão. Removidos parâmetros que podem conflitar com certas 
-    versões do driver local, mantendo apenas o essencial.
-    """
+    """Retorna a conexão padrão do Streamlit."""
     return st.connection("postgresql", type="sql")
 
 def month_to_num(mes: str) -> int:
@@ -341,8 +338,8 @@ def load_consolidated_data(
     selected_ufs: Tuple[str, ...],
     selected_municipios: Tuple[str, ...],
 ) -> pd.DataFrame:
-    # 1. Alteração: Usa a nova função resiliente
     try:
+        # Mudança: usamos a função cacheada para evitar criar novas instâncias de conexão
         conn = get_connection() 
         mapping = get_dimension_mapping()
         qtd_proc_cols, vl_proc_cols = get_procedure_columns()
@@ -371,8 +368,7 @@ def load_consolidated_data(
             {uf_filter}
             {municipio_filter}
         """
-        # 2. Alteração: Adicionado ttl=0 para não criar cache sobre cache
-        dim_df = conn.query(dim_query, params=dim_params, ttl=0)
+        dim_df = conn.query(dim_query, params=dim_params)
 
         if dim_df.empty:
             return pd.DataFrame()
@@ -411,7 +407,7 @@ def load_consolidated_data(
             {month_filter}
             {mun_filter}
         """
-        fact_df = conn.query(fact_query, params=fact_params, ttl=0)
+        fact_df = conn.query(fact_query, params=fact_params)
 
         if fact_df.empty:
             return pd.DataFrame()
@@ -423,10 +419,9 @@ def load_consolidated_data(
         return df.sort_values(["ano", "mes", "uf_nome", "municipio_nome"]).reset_index(drop=True)
 
     except Exception as e:
-        # 3. Alteração: Se der erro de banco, limpa o recurso de conexão para a próxima tentativa
+        # Se falhar, limpa o cache da conexão para não travar na próxima tentativa
         st.cache_resource.clear()
         raise e
-
 
 @st.cache_data(ttl=900)
 def get_period_totals(
