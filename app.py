@@ -506,7 +506,7 @@ with tab_raw:
                     continue
                 _decimals = 2 if (_col.startswith("vl_") or _col == "total_vl") else 0
                 _df_display_fmt[_col] = _df_display_fmt[_col].apply(br_format, decimals=_decimals)
-            st.dataframe(_df_display_fmt, width="stretch")
+            st.dataframe(_df_display_fmt, use_container_width=True)
 
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False)
@@ -532,19 +532,19 @@ with tab_raw:
             st.caption("**Colunas de controle e metadados** (comuns às duas matrizes)")
             st.dataframe(
                 pd.DataFrame(_meta_ctrl),
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
             )
             st.caption("**Matriz de Quantidades** (`aih_qtd`) — colunas `qtd_*`")
             st.dataframe(
                 pd.DataFrame(_meta_qtd),
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
             )
             st.caption("**Matriz de Valores Financeiros** (`aih_vl`) — colunas `vl_*`")
             st.dataframe(
                 pd.DataFrame(_meta_vl),
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
             )
 
@@ -593,7 +593,7 @@ with tab_kpis:
                 "kurtosis": stats_df.kurt(numeric_only=True),
             })
             _stats_display = _base.join(_extra).map(lambda v: br_format(v, 2))
-            st.dataframe(_stats_display, width="stretch")
+            st.dataframe(_stats_display, use_container_width=True)
 
             st.markdown("**Indicadores de referência do recorte atual:**")
             if _using_fallback:
