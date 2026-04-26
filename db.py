@@ -46,17 +46,8 @@ _PT_MONTH_MAP: Dict[str, int] = {
 
 @st.cache_resource
 def get_connection():
-    """
-    Retorna a conexão configurada para detectar quedas de rede 
-    automaticamente (pool_pre_ping) e reciclar conexões velhas.
-    """
-    return st.connection(
-        "postgresql", 
-        type="sql",
-        # O argumento 'kwargs' repassa configurações diretamente ao engine do SQLAlchemy
-        pool_pre_ping=True,  # Verifica se a conexão está viva antes de cada query
-        pool_recycle=300,    # Reinicia a conexão a cada 5 minutos (evita o timeout do banco)
-    )
+    """Retorna a conexão padrão. O Streamlit Cloud gerencia o pool internamente."""
+    return st.connection("postgresql", type="sql")
 
 def month_to_num(mes: str) -> int:
     """Converte abreviação de mês ('Jun', 'Jun', 'Fev', 'fevereiro') ou string numérica ('6') para inteiro 1-12."""
