@@ -331,7 +331,6 @@ def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
     return conn.query(query, params=params)
 
 
-@st.cache_data(ttl=900)
 def load_consolidated_data(
     selected_years: Tuple[str, ...],
     selected_months: Tuple[str, ...],
