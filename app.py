@@ -146,29 +146,37 @@ def col_label(col: str) -> str:
     return COLUMN_LABELS.get(col, col)
 
 
-# Listas fixas de colunas de procedimento — mesmas usadas no db.py.
-# qtd_0417 ausente em aih_qtd (existe só em aih_vl).
+# Listas canônicas de colunas de procedimento — espelho exato do schema do banco.
+# Mantidas em sincronia com as listas homônimas em db.py.
+#
+# Ausentes em aih_qtd (existem só em aih_vl): qtd_0417
+# Ausentes em aih_vl  (existem só em aih_qtd): vl_0101, vl_0213, vl_0311
 _QTD_PROC_COLS = [
-    "qtd_0101","qtd_0201","qtd_0202","qtd_0203","qtd_0204","qtd_0205",
-    "qtd_0206","qtd_0207","qtd_0208","qtd_0209","qtd_0210","qtd_0211",
-    "qtd_0212","qtd_0213","qtd_0214","qtd_0301","qtd_0302","qtd_0303",
-    "qtd_0304","qtd_0305","qtd_0306","qtd_0307","qtd_0308","qtd_0309",
-    "qtd_0310","qtd_0311","qtd_0401","qtd_0402","qtd_0403","qtd_0404",
-    "qtd_0405","qtd_0406","qtd_0407","qtd_0408","qtd_0409","qtd_0410",
-    "qtd_0411","qtd_0412","qtd_0413","qtd_0414","qtd_0415","qtd_0416",
-    "qtd_0418","qtd_0501","qtd_0502","qtd_0503","qtd_0504",
-    "qtd_0505","qtd_0506","qtd_0603","qtd_0702","qtd_0801","qtd_0802",
+    "qtd_0101",
+    "qtd_0201","qtd_0202","qtd_0203","qtd_0204","qtd_0205",
+    "qtd_0206","qtd_0207","qtd_0208","qtd_0209","qtd_0210",
+    "qtd_0211","qtd_0212","qtd_0213","qtd_0214",
+    "qtd_0301","qtd_0302","qtd_0303","qtd_0304","qtd_0305",
+    "qtd_0306","qtd_0307","qtd_0308","qtd_0309","qtd_0310","qtd_0311",
+    "qtd_0401","qtd_0402","qtd_0403","qtd_0404","qtd_0405",
+    "qtd_0406","qtd_0407","qtd_0408","qtd_0409","qtd_0410",
+    "qtd_0411","qtd_0412","qtd_0413","qtd_0414","qtd_0415",
+    "qtd_0416","qtd_0418",
+    "qtd_0501","qtd_0502","qtd_0503","qtd_0504","qtd_0505","qtd_0506",
+    "qtd_0603","qtd_0702","qtd_0801","qtd_0802",
 ]
 _VL_PROC_COLS = [
-    "vl_0101","vl_0201","vl_0202","vl_0203","vl_0204","vl_0205",
-    "vl_0206","vl_0207","vl_0208","vl_0209","vl_0210","vl_0211",
-    "vl_0212","vl_0213","vl_0214","vl_0301","vl_0302","vl_0303",
-    "vl_0304","vl_0305","vl_0306","vl_0307","vl_0308","vl_0309",
-    "vl_0310","vl_0311","vl_0401","vl_0402","vl_0403","vl_0404",
-    "vl_0405","vl_0406","vl_0407","vl_0408","vl_0409","vl_0410",
-    "vl_0411","vl_0412","vl_0413","vl_0414","vl_0415","vl_0416",
-    "vl_0417","vl_0418","vl_0501","vl_0502","vl_0503","vl_0504",
-    "vl_0505","vl_0506","vl_0603","vl_0702","vl_0801","vl_0802",
+    "vl_0201","vl_0202","vl_0203","vl_0204","vl_0205",
+    "vl_0206","vl_0207","vl_0208","vl_0209","vl_0210",
+    "vl_0211","vl_0212","vl_0214",
+    "vl_0301","vl_0302","vl_0303","vl_0304","vl_0305",
+    "vl_0306","vl_0307","vl_0308","vl_0309","vl_0310",
+    "vl_0401","vl_0402","vl_0403","vl_0404","vl_0405",
+    "vl_0406","vl_0407","vl_0408","vl_0409","vl_0410",
+    "vl_0411","vl_0412","vl_0413","vl_0414","vl_0415",
+    "vl_0416","vl_0417","vl_0418",
+    "vl_0501","vl_0502","vl_0503","vl_0504","vl_0505","vl_0506",
+    "vl_0603","vl_0702","vl_0801","vl_0802",
 ]
 
 
