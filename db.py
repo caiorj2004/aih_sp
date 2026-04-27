@@ -184,12 +184,21 @@ def get_dimension_mapping() -> Dict[str, str]:
     }
 
 
-@st.cache_data(ttl=900)
-def get_procedure_columns() -> Tuple[List[str], List[str]]:
-    """Retorna as colunas de procedimentos (qtd_* e vl_*) das tabelas AIH."""
-    qtd_cols = [c for c in get_table_columns("aih_qtd") if c.startswith("qtd_")]
-    vl_cols = [c for c in get_table_columns("aih_vl") if c.startswith("vl_")]
-    return qtd_cols, vl_cols
+@st.cache_data(ttl=3600)
+def get_procedure_columns(table_name: str = "aih_qtd") -> List[str]:
+    """
+    Retorna a lista de nomes de colunas da tabela especificada, 
+    ajudando a identificar quais são códigos de procedimentos.
+    """
+    try:
+        conn = get_connection()
+        # Query para listar colunas no PostgreSQL
+        query = text(f"SELECT column_name FROM information_schema.columns WHERE table_name = :table")
+        result = conn.query(query, params={"table": table_name})
+        return result["column_name"].tolist()
+    except Exception:
+        # Fallback caso a query falhe: retorna lista vazia
+        return []
 
 
 # ---------------------------------------------------------------------------
