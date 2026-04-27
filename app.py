@@ -342,8 +342,7 @@ with st.sidebar:
     if st.button("🔄 Reiniciar Conexão e Cache"):
         st.cache_data.clear()
         st.cache_resource.clear()
-        if "_submitted_ufs" in st.session_state:
-            del st.session_state["_submitted_ufs"]
+        st.session_state.clear()
         st.rerun()
 
     if _db_error is None and _fb_municipios is not None:
@@ -353,23 +352,29 @@ with st.sidebar:
             _months = _fb_months
         st.divider()
 
-    if _using_fallback and _fb_municipios is not None:
+    # --- INÍCIO DA ÁREA DE FILTROS ---
+    if _using_fallback:
         st.header("Filtros (Modo Offline)")
-        with st.form("sidebar_filters_fallback"):
-            selected_years = st.multiselect("Ano", options=_years, default=_years)
-            selected_months = st.multiselect("Mês", options=_months, default=_months)
-            # ... restam filtros de fallback ...
-            _form_submitted = st.form_submit_button("🔍 Aplicar Filtros")
+        selected_years = st.multiselect("Ano", options=_years, default=_years)
+        selected_months = st.multiselect("Mês", options=_months, default=_months)
+        
+        # Correção: Filtro de município para Fallback
+        municipio_options = sorted(_fb_municipios)
+        selected_mun_labels = st.multiselect("Município (Opcional)", options=municipio_options, default=[])
+        
+        selected_years_tuple = tuple(selected_years)
+        selected_months_tuple = tuple(selected_months)
+        selected_ufs = ()
+        selected_municipios = tuple(selected_mun_labels)
 
     elif _db_error is None and _years and _months and _uf_options is not None:
         st.header("Filtros")
-
         uf_label_to_code = {
             f"{row.uf_sigla} — {row.uf_nome}": row.uf_codigo
             for row in _uf_options.itertuples(index=False)
         }
 
-        # 2. FORMULÁRIO UNIFICADO
+        # 2. FORMULÁRIO UNIFICADO (Modo Online)
         with st.form("sidebar_filters_db"):
             selected_years = st.multiselect("Ano", options=_years, default=_years)
             selected_months = st.multiselect("Mês", options=_months, default=_months)
@@ -378,45 +383,38 @@ with st.sidebar:
                 options=list(uf_label_to_code.keys()),
                 default=list(uf_label_to_code.keys())[:1],
             )
-            
             _form_submitted = st.form_submit_button("🔍 Aplicar Filtros e Atualizar Dashboard")
 
-        # Persistência do estado
+        # Persistência e Processamento das UFs
         _submitted_ufs_codes = tuple(uf_label_to_code[lbl] for lbl in selected_uf_labels)
-        
         if _form_submitted or "_submitted_ufs" not in st.session_state:
             st.session_state["_submitted_ufs"] = _submitted_ufs_codes
             st.session_state["last_submitted_years"] = tuple(selected_years)
             st.session_state["last_submitted_months"] = tuple(selected_months)
 
-        # Filtro de Municípios (Dependente da UF)
-        municipio_options_df = load_municipality_options(st.session_state["_submitted_ufs"])
+        selected_ufs = st.session_state["_submitted_ufs"]
+        selected_years_tuple = st.session_state.get("last_submitted_years", tuple(selected_years))
+        selected_months_tuple = st.session_state.get("last_submitted_months", tuple(selected_months))
+
+        # Filtro de Municípios dinâmico para Modo Online
+        municipio_options_df = load_municipality_options(selected_ufs)
         municipio_label_to_code = {
             f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
             for row in municipio_options_df.itertuples(index=False)
         }
 
-        selected_municipio_labels = st.multiselect(
+        selected_mun_labels = st.multiselect(
             "Município (Opcional)",
             options=list(municipio_label_to_code.keys()),
             default=[],
-            key="mun_filter",
-            help="Deixe vazio para ver todos os municípios das UFs selecionadas."
+            key="mun_filter_db"
         )
+        selected_municipios = tuple(municipio_label_to_code[label] for label in selected_mun_labels)
 
-        selected_ufs = st.session_state["_submitted_ufs"]
-        selected_years_tuple = st.session_state.get("last_submitted_years", tuple(selected_years))
-        selected_months_tuple = st.session_state.get("last_submitted_months", tuple(selected_months))
-        
-        if _using_fallback and not selected_municipio_labels:
-            selected_municipios = tuple(municipio_label_to_code.values())
-        else:
-            selected_municipios = tuple(municipio_label_to_code[label] for label in selected_municipio_labels)
-            
-        st.caption(
-            "ℹ️ Os gráficos **Ranking Top 10**, **Scatter Plot** e **Heatmap Sazonal** sempre exibem "
-            "todos os municípios da UF selecionada, independentemente deste filtro."
-        )
+    st.caption(
+        "ℹ️ Os gráficos **Ranking Top 10**, **Scatter Plot** e **Heatmap Sazonal** sempre exibem "
+        "todos os municípios da UF selecionada, independentemente deste filtro."
+    )
 
 
 def _render_db_unavailable() -> None:
@@ -681,13 +679,14 @@ with tab_charts:
     elif _using_fallback and not selected_municipios:
         st.warning("Selecione ao menos um **município** na barra lateral para continuar.")
     else:
+        # Carregamento dos dados para os gráficos
         if _using_fallback:
             df_charts = load_fallback_consolidated(
                 selected_years_tuple,
                 selected_months_tuple,
                 selected_municipios,
             )
-            # Gráficos 2 e 3 sempre incluem todos os municípios
+            # Gráficos de comparação (2 e 3) usam todos os municípios do contexto
             df_charts_all = load_fallback_consolidated(
                 selected_years_tuple,
                 selected_months_tuple,
@@ -700,7 +699,6 @@ with tab_charts:
                 selected_ufs,
                 selected_municipios,
             )
-            # Gráficos 2 e 3 incluem todos os municípios das UFs selecionadas
             df_charts_all = load_consolidated_data(
                 selected_years_tuple,
                 selected_months_tuple,
@@ -711,25 +709,22 @@ with tab_charts:
         if df_charts.empty:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
-            df = df_charts           # Alias para gráficos 1 e 4 (filtrados por município)
-            df_all = df_charts_all   # Alias para gráficos 2 e 3 (todos os municípios)
+            df = df_charts           # Dados filtrados por município
+            df_all = df_charts_all   # Dados globais (UF ou Geral)
 
-            # --- BUSCA DINÂMICA DE TODAS AS VARIÁVEIS DO BANCO ---
+            # --- BUSCA DINÂMICA DE COLUNAS ---
             if _using_fallback:
                 qtd_proc_cols, vl_proc_cols = get_fallback_procedure_columns()
             else:
-                # 1. Busca todos os códigos numéricos brutos da tabela aih_qtd
                 all_cols_raw = get_procedure_columns("aih_qtd")
                 proc_codes = [c for c in all_cols_raw if c.isdigit()]
-                
-                # 2. Adiciona os prefixos q_ e v_ que o load_consolidated_data cria no SQL
                 qtd_proc_cols = [f"q_{c}" for c in proc_codes]
                 vl_proc_cols = [f"v_{c}" for c in proc_codes]
 
-            # 3. Filtra apenas o que realmente chegou no DataFrame para evitar erros
+            # Filtra apenas o que existe no DataFrame para evitar erros nos Selectboxes
             avail_qtd_cols = ["total_qtd"] + [c for c in qtd_proc_cols if c in df_all.columns]
             avail_vl_cols = ["total_vl"] + [c for c in vl_proc_cols if c in df_all.columns]
-			
+            
             # 1. Série temporal
             st.subheader("1) Série temporal")
             ts_c1, ts_c2 = st.columns(2)
@@ -748,7 +743,7 @@ with tab_charts:
                     key="serie_vl",
                 )
             
-            # Agrupamento e Ordenação Temporal
+            # Preparação dos dados para a série temporal
             series = (
                 df.groupby(["ano", "mes"], as_index=False)[[serie_qtd_col, serie_vl_col]]
                 .sum()
@@ -757,23 +752,28 @@ with tab_charts:
             series = series[series["_mes_num"] > 0].copy()
             series = series.sort_values(["ano", "_mes_num"])
             
-            # Criação do eixo X temporal para o Plotly
+            # Conversão para formato de data para o eixo X
             series["periodo"] = pd.to_datetime(
                 series["ano"].astype(str) + "-" + series["_mes_num"].astype(str).str.zfill(2) + "-01"
             )
-            series = series.drop(columns=["_mes_num"])
 
             fig_line = go.Figure()
             fig_line.add_trace(
                 go.Scatter(
-                    x=series["periodo"], y=series[serie_qtd_col],
-                    mode="lines+markers", name=col_label(serie_qtd_col), yaxis="y1",
+                    x=series["periodo"], 
+                    y=series[serie_qtd_col],
+                    mode="lines+markers", 
+                    name=col_label(serie_qtd_col), 
+                    yaxis="y1"
                 )
             )
             fig_line.add_trace(
                 go.Scatter(
-                    x=series["periodo"], y=series[serie_vl_col],
-                    mode="lines+markers", name=col_label(serie_vl_col), yaxis="y2",
+                    x=series["periodo"], 
+                    y=series[serie_vl_col],
+                    mode="lines+markers", 
+                    name=col_label(serie_vl_col), 
+                    yaxis="y2"
                 )
             )
             
@@ -783,8 +783,8 @@ with tab_charts:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
-            st.plotly_chart(fig_line, width="stretch") # Corrigido use_container_width
-
+            st.plotly_chart(fig_line, use_container_width=True)
+			
 # 2. Ranking Top 10
             st.subheader("2) Ranking Top 10")
             st.caption("ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município.")
