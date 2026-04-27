@@ -590,45 +590,36 @@ with tab_kpis:
     elif _using_fallback and not selected_municipios:
         st.warning("Selecione ao menos um **município** na barra lateral para continuar.")
     else:
-        if _using_fallback:
-            df_stats = load_fallback_consolidated(
-                selected_years_tuple,
-                selected_months_tuple,
-                selected_municipios,
-            )
-        else:
-            df_stats = load_consolidated_data(
-                selected_years_tuple,
-                selected_months_tuple,
-                selected_ufs,
-                selected_municipios,
-            )
-
+        # ... (carregamento do df_stats permanece igual)
         if df_stats.empty:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
             st.subheader("Resumo Estatístico")
+
+            # --- INÍCIO DO TRECHO CORRIGIDO ---
             if _using_fallback:
-				# O fallback já costuma retornar o par de listas
-				qtd_proc_cols, vl_proc_cols = get_fallback_procedure_columns()
-			else:
-				# 1. Busca a lista bruta de colunas da tabela de quantidade
-				all_cols = get_procedure_columns("aih_qtd")
-    
-				# 2. Filtra apenas os nomes que são códigos numéricos (procedimentos)
-				proc_codes = [c for c in all_cols if c.isdigit()]
-    
-				# 3. Reconstrói os nomes das colunas com os prefixos usados no DataFrame
-				# Nota: Se no seu db.py você usou "qtd_" em vez de "q_", ajuste abaixo.
-				qtd_proc_cols = [f"q_{c}" for c in proc_codes]
-				vl_proc_cols = [f"v_{c}" for c in proc_codes]
-				
+                # O fallback já retorna as duas listas prontas
+                qtd_proc_cols, vl_proc_cols = get_fallback_procedure_columns()
+            else:
+                # 1. Busca os códigos brutos do banco
+                all_cols_raw = get_procedure_columns("aih_qtd")
+                proc_codes = [c for c in all_cols_raw if c.isdigit()]
+                
+                # 2. Reconstrói as colunas com os prefixos 'q_' e 'v_' usados no DataFrame
+                qtd_proc_cols = [f"q_{c}" for c in proc_codes]
+                vl_proc_cols = [f"v_{c}" for c in proc_codes]
+
+            # 3. Consolida a lista de colunas que realmente existem no DataFrame filtrado
             all_metric_cols = (
                 ["total_qtd", "total_vl"]
                 + [c for c in qtd_proc_cols if c in df_stats.columns]
                 + [c for c in vl_proc_cols if c in df_stats.columns]
             )
+            # --- FIM DO TRECHO CORRIGIDO ---
+
+            # Converte para numérico para garantir que o describe() funcione
             stats_df = df_stats[all_metric_cols].apply(pd.to_numeric, errors="coerce")
+            
             _base = stats_df.describe().T
             _extra = pd.DataFrame({
                 "variance": stats_df.var(numeric_only=True),
