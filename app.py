@@ -783,12 +783,20 @@ with tab_charts:
             )
             st.plotly_chart(fig_line, width="stretch") # Corrigido use_container_width
 
-            # 2. Ranking Top 10
+# 2. Ranking Top 10
             st.subheader("2) Ranking Top 10")
             st.caption("ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município.")
+            
+            # --- CORREÇÃO DE PROTEÇÃO CONTRA KEYERROR 'uf_nome' ---
+            # Verifica se temos a coluna de UF disponível no DataFrame atual
+            has_uf_col = "uf_nome" in df_all.columns
+
             if _using_fallback:
                 rank_level = "Município"
                 st.caption("ℹ️ Dados locais não possuem informação de UF. Ranking disponível apenas por Município.")
+            elif not has_uf_col:
+                rank_level = "Município"
+                st.caption("ℹ️ A informação de UF não foi retornada pelo banco. Ranking disponível apenas por Município.")
             else:
                 rank_level = st.radio("Nível do ranking", ["Município", "UF"], horizontal=True)
 
@@ -800,32 +808,33 @@ with tab_charts:
                 key="rank_metric",
             )
 
-            if rank_level == "Município":
-                ranking = (
-                    df_all.groupby("municipio_nome", as_index=False)[rank_metric]
-                    .sum()
-                    .sort_values(rank_metric, ascending=False)
-                    .head(10)
-                )
-                cat_col = "municipio_nome"
-            else:
-                ranking = (
-                    df_all.groupby("uf_nome", as_index=False)[rank_metric]
-                    .sum()
-                    .sort_values(rank_metric, ascending=False)
-                    .head(10)
-                )
+            # Lógica de agrupamento com fallback de segurança para cat_col
+            if rank_level == "UF" and has_uf_col:
                 cat_col = "uf_nome"
+            else:
+                # Fallback para município_nome ou a primeira coluna disponível
+                if "municipio_nome" in df_all.columns:
+                    cat_col = "municipio_nome"
+                else:
+                    cat_col = df_all.columns[0]
+
+            # Executa o agrupamento de forma segura
+            ranking = (
+                df_all.groupby(cat_col, as_index=False)[rank_metric]
+                .sum()
+                .sort_values(rank_metric, ascending=False)
+                .head(10)
+            )
 
             fig_rank = px.bar(
-                ranking.sort_values(rank_metric, ascending=False),
+                ranking,
                 x=cat_col,
                 y=rank_metric,
                 labels={cat_col: "", rank_metric: col_label(rank_metric)},
                 text_auto=True,
             )
             fig_rank.update_layout(xaxis_tickangle=-40)
-            st.plotly_chart(fig_rank, use_container_width=True)
+            st.plotly_chart(fig_rank, width="stretch") # Corrigido use_container_width
 
 # 3. Scatter Plot
             st.subheader("3) Scatter Plot")
