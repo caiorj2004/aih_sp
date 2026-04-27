@@ -2,12 +2,12 @@
 db.py
 -----
 Módulo de conexão e consultas ao banco de dados PostgreSQL.
-
+ 
 A conexão é configurada no Streamlit Cloud via "Advanced Settings > Secrets"
 (ou localmente via .streamlit/secrets.toml, que NÃO deve ser versionado).
-
+ 
 Formato esperado no bloco de secrets:
-
+ 
     [connections.postgresql]
     dialect   = "postgresql"
     host      = "SEU_HOST"
@@ -16,25 +16,25 @@ Formato esperado no bloco de secrets:
     username  = "SEU_USUARIO"
     password  = "SUA_SENHA"
 """
-
+ 
 from typing import Dict, Iterable, List, Optional, Tuple
-
+ 
 import pandas as pd
 import streamlit as st
 from sqlalchemy import text
 import gc
-
+ 
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
 EPSILON = 1e-9
 MIN_VALID_YEAR = 1
-
+ 
 _ALLOWED_TABLES = {"aih_qtd", "aih_vl", "municipios_ibge", "unidade_federacao"}
-
+ 
 _MONTH_ABBRS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
+ 
 # Portuguese month abbreviations (3-letter) mapped to month number
 _PT_MONTH_MAP: Dict[str, int] = {
     "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
@@ -44,7 +44,7 @@ _PT_MONTH_MAP: Dict[str, int] = {
     "maio": 5, "junho": 6, "julho": 7, "agosto": 8, "setembro": 9,
     "outubro": 10, "novembro": 11, "dezembro": 12,
 }
-
+ 
 def month_to_num(mes: str) -> int:
     """Converte abreviação de mês ('Jun', 'Jun', 'Fev', 'fevereiro') ou string numérica ('6') para inteiro 1-12."""
     try:
@@ -59,8 +59,8 @@ def month_to_num(mes: str) -> int:
             return _MONTH_ABBRS.index(s.capitalize()[:3]) + 1
         except ValueError:
             return 0
-
-
+ 
+ 
 def _month_to_str(num: int, original_sample: str) -> str:
     """Formata número de mês no mesmo estilo da amostra original ('Jun' ou '6')."""
     try:
@@ -68,13 +68,13 @@ def _month_to_str(num: int, original_sample: str) -> str:
         return str(num)
     except (ValueError, TypeError):
         return _MONTH_ABBRS[num - 1]
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Conexão
 # ---------------------------------------------------------------------------
-
-
+ 
+ 
 @st.cache_resource
 def get_connection():
     """
@@ -82,13 +82,13 @@ def get_connection():
     dos secrets do Streamlit (Cloud ou .streamlit/secrets.toml local).
     """
     return st.connection("postgresql", type="sql")
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Utilidades internas
 # ---------------------------------------------------------------------------
-
-
+ 
+ 
 def _build_in_clause(column_name: str, values: Iterable[str], param_prefix: str, params_dict: dict) -> str:
     """
     Constrói cláusula IN compatível com SQLAlchemy (usando :param).
@@ -105,21 +105,21 @@ def _build_in_clause(column_name: str, values: Iterable[str], param_prefix: str,
         params_dict[key] = str(val)  # força conversão para string para evitar erro de tipo
         
     return f"AND {column_name} IN ({', '.join(placeholders)})"
-
-
+ 
+ 
 def _first_existing(candidates: List[str], columns: List[str], fallback: str) -> str:
     """Retorna o primeiro nome de coluna da lista que exista em *columns*."""
     for candidate in candidates:
         if candidate in columns:
             return candidate
     return fallback
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Metadados de schema
 # ---------------------------------------------------------------------------
-
-
+ 
+ 
 @st.cache_data(ttl=3600)
 def get_table_columns(table_name: str) -> List[str]:
     """
@@ -128,7 +128,7 @@ def get_table_columns(table_name: str) -> List[str]:
     """
     if table_name not in _ALLOWED_TABLES:
         raise ValueError(f"Tabela '{table_name}' não está na lista de tabelas permitidas.")
-
+ 
     conn = get_connection()
     query = (
         "SELECT column_name "
@@ -138,26 +138,26 @@ def get_table_columns(table_name: str) -> List[str]:
     )
     result = conn.query(query, params={"table_name": table_name})
     return result["column_name"].tolist() if not result.empty else []
-
-
+ 
+ 
 @st.cache_data(ttl=3600)
 def get_dimension_mapping() -> Dict[str, str]:
     """
     Retorna o mapeamento de colunas de dimensão do banco de dados.
-
+ 
     Colunas de join conhecidas (fixas):
       - municipios_ibge.codigo_municipio  ↔  aih_qtd/aih_vl.cod_municipio
       - municipios_ibge.uf_codigo         ↔  unidade_federacao.co_uf_prova
-
+ 
     A coluna de nome do município e a coluna de nome da UF são detectadas
     dinamicamente pois podem variar conforme a carga do banco.
     """
     municipio_cols = get_table_columns("municipios_ibge")
     uf_cols = get_table_columns("unidade_federacao")
-
+ 
     # Coluna de join fixa: municipios_ibge → aih_qtd/aih_vl
     municipio_code_col = "codigo_municipio"
-
+ 
     municipio_name_col = _first_existing(
         ["nome_municipio", "no_municipio", "municipio", "nome"],
         municipio_cols,
@@ -175,15 +175,15 @@ def get_dimension_mapping() -> Dict[str, str]:
         uf_cols,
         uf_sigla_col,
     )
-
+ 
     return {
         "municipio_code_col": municipio_code_col,
         "municipio_name_col": municipio_name_col,
         "uf_sigla_col": uf_sigla_col,
         "uf_name_col": uf_name_col,
     }
-
-
+ 
+ 
 @st.cache_data(ttl=3600)
 def get_procedure_columns(table_name: str = "aih_qtd") -> List[str]:
     """
@@ -199,19 +199,19 @@ def get_procedure_columns(table_name: str = "aih_qtd") -> List[str]:
     except Exception:
         # Fallback caso a query falhe: retorna lista vazia
         return []
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Consultas de dados
 # ---------------------------------------------------------------------------
-
-
+ 
+ 
 @st.cache_data(ttl=1800)
 def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
     """
     Carrega todas as combinações de Ano, Mês e UF disponíveis no banco.
     Usado para popular os filtros da sidebar.
-
+ 
     Estratégia de extração em batches:
     - aih_qtd (tabela fato grande): consultas via ``conn.session`` com cursor
       server-side (``stream_results=True``) e ``partitions()`` para leitura em
@@ -222,10 +222,10 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
       simples via ``conn.query()`` – não requerem streaming.
     """
     conn = get_connection()
-
+ 
     # Tamanho dos lotes para leitura via cursor server-side
     _BATCH_SIZE = 50
-
+ 
     # SQL: CTE recursiva "loose index scan" – usa apenas k páginas de índice
     _years_sql = text(
         """
@@ -242,7 +242,7 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
         SELECT ano FROM t WHERE ano IS NOT NULL
         """
     )
-
+ 
     _months_sql = text(
         """
         WITH RECURSIVE t(mes) AS (
@@ -258,11 +258,11 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
         SELECT mes FROM t WHERE mes IS NOT NULL
         """
     )
-
+ 
     # 1 & 2: anos e meses – extração em batches via cursor server-side
     years_set: set = set()
     months_set: set = set()
-
+ 
     with conn.session as session:
         # -- aih_qtd: anos --
         years_result = session.execute(
@@ -274,7 +274,7 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
                 val = str(row[0]).strip()
                 if val:
                     years_set.add(val)
-
+ 
         # -- aih_qtd: meses --
         months_result = session.execute(
             _months_sql,
@@ -285,10 +285,10 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
                 val = str(row[0]).strip()
                 if val:
                     months_set.add(val)
-
+ 
     years = sorted(years_set)
     months = sorted(months_set, key=month_to_num)
-
+ 
     # 3. UFs: join entre tabelas de dimensão (pequenas – conn.query() é suficiente)
     mapping = get_dimension_mapping()
     uf_query = f"""
@@ -305,10 +305,10 @@ def load_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
         .drop_duplicates()
         .sort_values(["uf_sigla", "uf_codigo"])
     )
-
+ 
     return years, months, uf_df
-
-
+ 
+ 
 @st.cache_data(ttl=3600)
 def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
     conn = get_connection()
@@ -318,9 +318,9 @@ def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
     # Se não houver UF selecionada, retorna vazio para evitar erro de SQL
     if not selected_ufs:
         return pd.DataFrame(columns=["cod_municipio", "municipio_nome", "uf_codigo"])
-
+ 
     uf_filter = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", params)
-
+ 
     query = f"""
         SELECT DISTINCT
             CAST(m.{mapping['municipio_code_col']} AS TEXT) AS cod_municipio,
@@ -333,7 +333,7 @@ def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
     """
     # O Streamlit converterá o dict 'params' para os binds :uf_0, :uf_1, etc.
     return conn.query(query, params=params)
-
+ 
 @st.cache_data(ttl=900)
 def load_consolidated_data(
     selected_years: Tuple[str, ...],
@@ -346,12 +346,21 @@ def load_consolidated_data(
         mapping = get_dimension_mapping()
         
         # 1. Obter colunas de procedimentos (dinâmico)
-        all_cols = get_procedure_columns("aih_qtd")
-        # Filtramos apenas colunas que são códigos de procedimentos (ex: 0301...)
-        proc_cols = [c for c in all_cols if c.isdigit()]
-        # Selecionamos apenas as top 15 para não estourar a memória
-        proc_selection = ", ".join([f"CAST(q.\"{c}\" AS FLOAT4) AS \"q_{c}\"" for c in proc_cols[:15]])
-
+        # get_procedure_columns devolve os nomes reais: "qtd_0301", "qtd_0406", etc.
+        # Filtramos pelo prefixo correto — isdigit() não funciona com esses nomes.
+        qtd_all_cols = get_procedure_columns("aih_qtd")
+        vl_all_cols = get_procedure_columns("aih_vl")
+        qtd_proc_cols = [c for c in qtd_all_cols if c.startswith("qtd_")]
+        vl_proc_cols = [c for c in vl_all_cols if c.startswith("vl_")]
+        # Selecionamos todas as colunas de procedimento (limitado a 50 de cada para segurança)
+        qtd_selection = ", ".join(
+            [f'CAST(q."{c}" AS FLOAT8) AS "{c}"' for c in qtd_proc_cols[:50]]
+        )
+        vl_selection = ", ".join(
+            [f'CAST(v."{c}" AS FLOAT8) AS "{c}"' for c in vl_proc_cols[:50]]
+        )
+        proc_selection = ", ".join(filter(None, [qtd_selection, vl_selection]))
+ 
         params = {}
         y_clause = _build_in_clause("q.ano", selected_years, "yr", params)
         m_clause = _build_in_clause("q.mes", selected_months, "mo", params)
@@ -360,7 +369,7 @@ def load_consolidated_data(
         uf_clause = ""
         if selected_ufs:
             uf_clause = _build_in_clause("m.uf_codigo", selected_ufs, "uf", params)
-
+ 
         # SQL Otimizado com CTE
         query = f"""
             WITH filtered_mun AS (
@@ -389,7 +398,7 @@ def load_consolidated_data(
     except Exception as e:
         st.cache_resource.clear()
         raise e
-
+ 
 @st.cache_data(ttl=900)
 def get_period_totals(
     year: str,
@@ -403,13 +412,13 @@ def get_period_totals(
     """
     conn = get_connection()
     mapping = get_dimension_mapping()
-
+ 
     params: Dict[str, object] = {"year": year, "month": month}
     uf_filter = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", params)
     municipio_filter = _build_in_clause(
         f"CAST(m.{mapping['municipio_code_col']} AS TEXT)", selected_municipios, "mun", params
     )
-
+ 
     query = f"""
         SELECT
             COALESCE(SUM(q.total), 0) AS total_qtd,
@@ -428,18 +437,18 @@ def get_period_totals(
     result = conn.query(query, params=params)
     if result.empty:
         return 0.0, 0.0
-
+ 
     return (
         float(result.iloc[0]["total_qtd"] or 0),
         float(result.iloc[0]["total_vl"] or 0),
     )
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # Helpers de cálculo
 # ---------------------------------------------------------------------------
-
-
+ 
+ 
 def previous_period(year: str, month: str) -> Optional[Tuple[str, str]]:
     """Retorna o período imediatamente anterior. None se não houver período válido."""
     m = month_to_num(month)
@@ -449,8 +458,9 @@ def previous_period(year: str, month: str) -> Optional[Tuple[str, str]]:
     if y <= MIN_VALID_YEAR:
         return None
     return str(y - 1), _month_to_str(12, month)
-
-
+ 
+ 
 def calculate_average_ticket(total_value: float, total_quantity: float) -> float:
     """Valor médio por procedimento. Retorna 0 se quantidade for praticamente nula."""
     return (total_value / total_quantity) if abs(total_quantity) >= EPSILON else 0.0
+ 
