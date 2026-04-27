@@ -45,11 +45,6 @@ _PT_MONTH_MAP: Dict[str, int] = {
     "outubro": 10, "novembro": 11, "dezembro": 12,
 }
 
-@st.cache_resource
-def get_connection():
-    """Retorna a conexão padrão. O Streamlit Cloud gerencia o pool internamente."""
-    return st.connection("postgresql", type="sql")
-
 def month_to_num(mes: str) -> int:
     """Converte abreviação de mês ('Jun', 'Jun', 'Fev', 'fevereiro') ou string numérica ('6') para inteiro 1-12."""
     try:
@@ -107,7 +102,7 @@ def _build_in_clause(column_name: str, values: Iterable[str], param_prefix: str,
     for i, val in enumerate(val_list):
         key = f"{param_prefix}_{i}"
         placeholders.append(f":{key}")
-        params_dict[key] = str(val) # Força string para evitar erro de tipo
+        params_dict[key] = str(val)  # força conversão para string para evitar erro de tipo
         
     return f"AND {column_name} IN ({', '.join(placeholders)})"
 
@@ -330,6 +325,7 @@ def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
     # O Streamlit converterá o dict 'params' para os binds :uf_0, :uf_1, etc.
     return conn.query(query, params=params)
 
+@st.cache_data(ttl=900)
 def load_consolidated_data(
     selected_years: Tuple[str, ...],
     selected_months: Tuple[str, ...],
@@ -386,7 +382,6 @@ def load_consolidated_data(
         return df.sort_values(["ano", "mes", "uf_nome", "municipio_nome"]).reset_index(drop=True)
 
     except Exception as e:
-        st.cache_resource.clear()
         raise e
 
 @st.cache_data(ttl=900)

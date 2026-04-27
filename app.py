@@ -280,7 +280,12 @@ with tab_intro:
 # Carregamento inicial — tenta DB; usa fallback Parquet em caso de falha
 # ---------------------------------------------------------------------------
 _db_error: Optional[Exception] = None
-_using_fallback = False
+
+# Respect the user's local-mode toggle from the previous run so we never
+# attempt a DB connection when the user explicitly chose the Parquet mode.
+_force_local: bool = st.session_state.get("use_local", False)
+_using_fallback: bool = _force_local
+
 _years: list = []
 _months: list = []
 _uf_options = None
@@ -288,28 +293,31 @@ _fb_municipios: Optional[pd.DataFrame] = None
 _fb_years: list = []
 _fb_months: list = []
 
-try:
-    if not _using_fallback:
-        # Tenta carregar com um timeout implícito ao não usar caches eternos
+if not _force_local:
+    try:
         _years, _months, _uf_options = load_filter_options()
-    else:
-        raise ConnectionError("Modo Fallback")
-except Exception as exc:
-    _db_error = exc
-    _using_fallback = True
-    # Se o banco falhar, tentamos o fallback imediatamente
+    except Exception as exc:
+        _db_error = exc
+        _using_fallback = True
+        try:
+            _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
+            _years, _months = _fb_years, _fb_months
+        except Exception:
+            pass
+
+# Pre-load fallback options when DB is available so the connection toggle works
+if _db_error is None and not _force_local:
+    try:
+        _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
+    except Exception:
+        pass  # fallback files unavailable; toggle will be hidden
+
+if _force_local:
     try:
         _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
         _years, _months = _fb_years, _fb_months
     except Exception:
         pass
-
-# Pre-load fallback options when DB is available so the connection toggle works
-if _db_error is None:
-    try:
-        _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
-    except Exception:
-        pass  # fallback files unavailable; toggle will be hidden
 
 # ---------------------------------------------------------------------------
 # Sidebar — Filtros (DB ou Fallback)
@@ -335,18 +343,21 @@ with st.sidebar:
             st.info("📁 Exibindo dados locais (Parquet).")
         st.header("Filtros")
 
-        selected_years = st.multiselect("Ano", options=_years, default=_years)
-        selected_months = st.multiselect("Mês", options=_months, default=_months)
-
         mun_label_to_code = {
             f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
             for row in _fb_municipios.itertuples(index=False)
         }
-        selected_mun_labels = st.multiselect(
-            "Município",
-            options=list(mun_label_to_code.keys()),
-            default=list(mun_label_to_code.keys()),
-        )
+
+        with st.form("sidebar_filters_fallback"):
+            selected_years = st.multiselect("Ano", options=_years, default=_years)
+            selected_months = st.multiselect("Mês", options=_months, default=_months)
+            selected_mun_labels = st.multiselect(
+                "Município",
+                options=list(mun_label_to_code.keys()),
+                default=list(mun_label_to_code.keys()),
+            )
+            st.form_submit_button("🔍 Aplicar Filtros")
+
         selected_municipios = tuple(mun_label_to_code[lbl] for lbl in selected_mun_labels)
         st.caption(
             "ℹ️ Os gráficos **Ranking Top 10**, **Scatter Plot** e **Heatmap Sazonal** sempre exibem "
@@ -358,30 +369,36 @@ with st.sidebar:
     elif _db_error is None and _years and _months and _uf_options is not None:
         st.header("Filtros")
 
-        selected_years = st.multiselect("Ano", options=_years, default=_years)
-        selected_months = st.multiselect("Mês", options=_months, default=_months)
-
         uf_label_to_code = {
             f"{row.uf_sigla} — {row.uf_nome}": row.uf_codigo
             for row in _uf_options.itertuples(index=False)
         }
-        selected_uf_labels = st.multiselect(
-            "Unidade da Federação (UF)",
-            options=list(uf_label_to_code.keys()),
-            default=list(uf_label_to_code.keys()),
-        )
-        selected_ufs = tuple(uf_label_to_code[label] for label in selected_uf_labels)
 
-        municipio_options_df = load_municipality_options(selected_ufs)
-        municipio_label_to_code = {
-            f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
-            for row in municipio_options_df.itertuples(index=False)
-        }
-        selected_municipio_labels = st.multiselect(
-            "Município",
-            options=list(municipio_label_to_code.keys()),
-            default=list(municipio_label_to_code.keys()),
-        )
+        with st.form("sidebar_filters_db"):
+            selected_years = st.multiselect("Ano", options=_years, default=_years)
+            selected_months = st.multiselect("Mês", options=_months, default=_months)
+            selected_uf_labels = st.multiselect(
+                "Unidade da Federação (UF)",
+                options=list(uf_label_to_code.keys()),
+                default=list(uf_label_to_code.keys()),
+            )
+            # Municipality options are based on the last *submitted* UF selection.
+            # They update after the form is submitted, preventing a DB round-trip
+            # on every individual filter change.
+            _submitted_ufs = tuple(uf_label_to_code[label] for label in selected_uf_labels)
+            municipio_options_df = load_municipality_options(_submitted_ufs)
+            municipio_label_to_code = {
+                f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
+                for row in municipio_options_df.itertuples(index=False)
+            }
+            selected_municipio_labels = st.multiselect(
+                "Município",
+                options=list(municipio_label_to_code.keys()),
+                default=list(municipio_label_to_code.keys()),
+            )
+            st.form_submit_button("🔍 Aplicar Filtros")
+
+        selected_ufs = _submitted_ufs
         selected_municipios = tuple(
             municipio_label_to_code[label] for label in selected_municipio_labels
         )
