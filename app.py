@@ -644,13 +644,28 @@ with tab_kpis:
                 c2.write(f"- Períodos no recorte: **{df_stats[['ano', 'mes']].drop_duplicates().shape[0]}**")
             else:
                 c1, c2, c3 = st.columns(3)
-                c1.write(f"- Municípios no recorte: **{df_stats['cod_municipio'].nunique()}**")
-                c2.write(f"- UFs no recorte: **{df_stats['uf_nome'].nunique()}**")
-                c3.write(f"- Períodos no recorte: **{df_stats[['ano', 'mes']].drop_duplicates().shape[0]}**")
+                
+                # Municípios: Tenta cod_municipio, se não existir usa a primeira coluna disponível
+                mun_col = 'cod_municipio' if 'cod_municipio' in df_stats.columns else df_stats.columns[0]
+                c1.write(f"- Municípios: **{df_stats[mun_col].nunique()}**")
+
+                # UFs: Proteção contra o KeyError 'uf_nome'
+                if 'uf_nome' in df_stats.columns:
+                    c2.write(f"- UFs no recorte: **{df_stats['uf_nome'].nunique()}**")
+                elif 'uf_codigo' in df_stats.columns:
+                    c2.write(f"- UFs no recorte: **{df_stats['uf_codigo'].nunique()}**")
+                else:
+                    c2.write("- UFs no recorte: **N/A**")
+
+                # Períodos
+                if 'ano' in df_stats.columns and 'mes' in df_stats.columns:
+                    periodos = df_stats[['ano', 'mes']].drop_duplicates().shape[0]
+                    c3.write(f"- Períodos: **{periodos}**")
+                else:
+                    c3.write("- Períodos: **1**")
+                    
             st.caption(
-                "ℹ️ A coluna **count** na tabela acima indica o número de registros "
-                "(combinações município‑período) no recorte. "
-                "O **total de procedimentos** é a soma da coluna `total_qtd`."
+                "ℹ️ A coluna **count** na tabela acima indica o número de registros (linhas) que compõem o grupo."
             )
 
 # ── Gráficos Analíticos ────────────────────────────────────────────────────
