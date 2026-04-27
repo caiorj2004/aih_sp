@@ -685,7 +685,7 @@ with tab_charts:
                 selected_months_tuple,
                 selected_municipios,
             )
-            # Charts 2 and 3 always include all municipalities
+            # Gráficos 2 e 3 sempre incluem todos os municípios
             df_charts_all = load_fallback_consolidated(
                 selected_years_tuple,
                 selected_months_tuple,
@@ -698,7 +698,7 @@ with tab_charts:
                 selected_ufs,
                 selected_municipios,
             )
-            # Charts 2 and 3 always include all municipalities in selected UFs
+            # Gráficos 2 e 3 incluem todos os municípios das UFs selecionadas
             df_charts_all = load_consolidated_data(
                 selected_years_tuple,
                 selected_months_tuple,
@@ -709,13 +709,22 @@ with tab_charts:
         if df_charts.empty:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
-            df = df_charts           # alias used by charts 1 and 4 (municipality-filtered)
-            df_all = df_charts_all   # used by charts 2 and 3 (all municipalities)
+            df = df_charts           # Alias para gráficos 1 e 4 (filtrados por município)
+            df_all = df_charts_all   # Alias para gráficos 2 e 3 (todos os municípios)
 
-            # Colunas de procedimento disponíveis no recorte atual
-            qtd_proc_cols, vl_proc_cols = (
-                get_fallback_procedure_columns() if _using_fallback else get_procedure_columns()
-            )
+            # --- CORREÇÃO DO UNPACKING ERROR ---
+            if _using_fallback:
+                qtd_proc_cols, vl_proc_cols = get_fallback_procedure_columns()
+            else:
+                # 1. Busca os códigos brutos do banco (retorna uma única lista)
+                all_cols_raw = get_procedure_columns("aih_qtd")
+                proc_codes = [c for c in all_cols_raw if c.isdigit()]
+                
+                # 2. Reconstrói as listas com os prefixos q_ e v_ usados no DataFrame consolidado
+                qtd_proc_cols = [f"q_{c}" for c in proc_codes]
+                vl_proc_cols = [f"v_{c}" for c in proc_codes]
+
+            # Filtra apenas colunas que realmente existem no DataFrame (evita KeyError)
             avail_qtd_cols = ["total_qtd"] + [c for c in qtd_proc_cols if c in df_all.columns]
             avail_vl_cols = ["total_vl"] + [c for c in vl_proc_cols if c in df_all.columns]
 
@@ -736,6 +745,8 @@ with tab_charts:
                     format_func=col_label,
                     key="serie_vl",
                 )
+            
+            # Agrupamento e Ordenação Temporal
             series = (
                 df.groupby(["ano", "mes"], as_index=False)[[serie_qtd_col, serie_vl_col]]
                 .sum()
@@ -743,6 +754,8 @@ with tab_charts:
             series["_mes_num"] = series["mes"].apply(month_to_num)
             series = series[series["_mes_num"] > 0].copy()
             series = series.sort_values(["ano", "_mes_num"])
+            
+            # Criação do eixo X temporal para o Plotly
             series["periodo"] = pd.to_datetime(
                 series["ano"].astype(str) + "-" + series["_mes_num"].astype(str).str.zfill(2) + "-01"
             )
@@ -761,13 +774,14 @@ with tab_charts:
                     mode="lines+markers", name=col_label(serie_vl_col), yaxis="y2",
                 )
             )
+            
             fig_line.update_layout(
                 yaxis=dict(title=col_label(serie_qtd_col)),
                 yaxis2=dict(title=col_label(serie_vl_col), overlaying="y", side="right"),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
-            st.plotly_chart(fig_line, use_container_width=True)
+            st.plotly_chart(fig_line, width="stretch") # Corrigido use_container_width
 
             # 2. Ranking Top 10
             st.subheader("2) Ranking Top 10")
