@@ -118,6 +118,10 @@ def load_fallback_consolidated(
     Retorna DataFrame com as colunas:
         ano, mes, cod_municipio, municipio_nome, total_qtd, total_vl, qtd_*, vl_*
 
+    Quando selected_municipios for vazio () todos os municípios são retornados
+    (equivalente a "sem filtro de município"). Isso permite que o app funcione
+    no modo fallback sem exigir seleção obrigatória de município.
+
     Todas as colunas numéricas (total_qtd, total_vl, qtd_*, vl_*) são
     garantidamente do tipo float64, equivalente ao CAST(... AS FLOAT8) do db.py.
     """
