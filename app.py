@@ -404,7 +404,12 @@ with st.sidebar:
         )
         _mun_label_to_code = {row[_mun_name_col]: row[_mun_code_col] for _, row in _fb_municipios.iterrows()}
         municipio_options = sorted(_mun_label_to_code.keys())
-        selected_mun_labels = st.multiselect("Município (Opcional)", options=municipio_options, default=[])
+        selected_mun_labels = st.multiselect(
+            "Município (vazio = todos)",
+            options=municipio_options,
+            default=[],
+            help="Deixe em branco para incluir todos os municípios disponíveis.",
+        )
         
         selected_years_tuple = tuple(selected_years)
         selected_months_tuple = tuple(selected_months)
@@ -488,10 +493,9 @@ with tab_raw:
         st.warning("Selecione ao menos um ano e um mês para continuar.")
     elif not _using_fallback and not selected_ufs:
         st.info("Selecione ao menos uma **Unidade da Federação (UF)** na barra lateral para carregar os dados.")
-    elif _using_fallback and not selected_municipios:
-        st.warning("Selecione ao menos um **município** na barra lateral para continuar.")
     else:
         if _using_fallback:
+            # selected_municipios vazio significa "todos os municípios"
             df = load_fallback_consolidated(
                 selected_years_tuple,
                 selected_months_tuple,
@@ -631,10 +635,8 @@ with tab_kpis:
         st.warning("Selecione ao menos um ano e um mês para continuar.")
     elif not _using_fallback and not selected_ufs:
         st.info("Selecione ao menos uma **Unidade da Federação (UF)** na barra lateral para carregar os dados.")
-    elif _using_fallback and not selected_municipios:
-        st.warning("Selecione ao menos um **município** na barra lateral para continuar.")
     else:
-        # AQUI ESTAVA O ERRO: A definição da variável df_stats
+        # selected_municipios vazio no fallback significa "todos os municípios"
         if _using_fallback:
             df_stats = load_fallback_consolidated(
                 selected_years_tuple, selected_months_tuple, selected_municipios
@@ -684,26 +686,18 @@ with tab_kpis:
                 c1.write(f"- Municípios no recorte: **{df_stats['cod_municipio'].nunique()}**")
                 c2.write(f"- Períodos no recorte: **{df_stats[['ano', 'mes']].drop_duplicates().shape[0]}**")
             else:
-                c1, c2, c3 = st.columns(3)
-                
+                c1, c2 = st.columns(2)
+
                 # Municípios: Tenta cod_municipio, se não existir usa a primeira coluna disponível
                 mun_col = 'cod_municipio' if 'cod_municipio' in df_stats.columns else df_stats.columns[0]
                 c1.write(f"- Municípios: **{df_stats[mun_col].nunique()}**")
 
-                # UFs: Proteção contra o KeyError 'uf_nome'
-                if 'uf_nome' in df_stats.columns:
-                    c2.write(f"- UFs no recorte: **{df_stats['uf_nome'].nunique()}**")
-                elif 'uf_codigo' in df_stats.columns:
-                    c2.write(f"- UFs no recorte: **{df_stats['uf_codigo'].nunique()}**")
-                else:
-                    c2.write("- UFs no recorte: **N/A**")
-
                 # Períodos
                 if 'ano' in df_stats.columns and 'mes' in df_stats.columns:
                     periodos = df_stats[['ano', 'mes']].drop_duplicates().shape[0]
-                    c3.write(f"- Períodos: **{periodos}**")
+                    c2.write(f"- Períodos: **{periodos}**")
                 else:
-                    c3.write("- Períodos: **1**")
+                    c2.write("- Períodos: **1**")
                     
             st.caption(
                 "ℹ️ A coluna **count** na tabela acima indica o número de registros (linhas) que compõem o grupo."
@@ -717,9 +711,8 @@ with tab_charts:
         st.warning("Selecione ao menos um ano e um mês para continuar.")
     elif not _using_fallback and not selected_ufs:
         st.info("Selecione ao menos uma **Unidade da Federação (UF)** na barra lateral para carregar os dados.")
-    elif _using_fallback and not selected_municipios:
-        st.warning("Selecione ao menos um **município** na barra lateral para continuar.")
     else:
+        # selected_municipios vazio no fallback significa "todos os municípios"
         # Carregamento dos dados para os gráficos
         if _using_fallback:
             df_charts = load_fallback_consolidated(
@@ -957,8 +950,19 @@ with tab_charts:
             _CORR_METHOD_MAP = {"Pearson": "pearson", "Spearman": "spearman"}
             _cm = _CORR_METHOD_MAP[corr_method]
 
-            _x_series = pd.to_numeric(scatter_df[scatter_x], errors="coerce").dropna()
-            _y_series = pd.to_numeric(scatter_df[scatter_y], errors="coerce").dropna()
+            # Limita a amostra para o cálculo de correlação (evita crash por OOM
+            # ao selecionar todas as UFs com Pearson em datasets muito grandes).
+            _CORR_SAMPLE_LIMIT = 5_000
+            _corr_source = scatter_df
+            if len(scatter_df) > _CORR_SAMPLE_LIMIT:
+                _corr_source = scatter_df.sample(n=_CORR_SAMPLE_LIMIT, random_state=42)
+                st.caption(
+                    f"⚠️ Amostra de {_CORR_SAMPLE_LIMIT:,} pontos usada para o cálculo de correlação "
+                    f"(dataset completo tem {len(scatter_df):,} linhas)."
+                )
+
+            _x_series = pd.to_numeric(_corr_source[scatter_x], errors="coerce").dropna()
+            _y_series = pd.to_numeric(_corr_source[scatter_y], errors="coerce").dropna()
             # Alinha os índices após dropna para garantir mesmo tamanho
             _common_idx = _x_series.index.intersection(_y_series.index)
             _x_series = _x_series.loc[_common_idx]
