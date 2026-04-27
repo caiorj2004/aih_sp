@@ -434,16 +434,29 @@ def load_consolidated_data(
                 "q.cod_municipio", selected_municipios, "mun", params
             )
 
-        mc = mapping["municipio_code_col"]
-        mn = mapping["municipio_name_col"]
+        mc  = mapping["municipio_code_col"]
+        mn  = mapping["municipio_name_col"]
+        ufs = mapping["uf_sigla_col"]
+        ufn = mapping["uf_name_col"]
 
         query = (
             f"WITH filtered_mun AS ("
-            f"  SELECT {mc} AS cod_mun, {mn} AS nome_mun"
-            f"  FROM municipios_ibge m WHERE 1=1 {uf_clause}"
+            f"  SELECT"
+            f"    m.{mc} AS cod_mun,"
+            f"    m.{mn} AS nome_mun,"
+            f"    CAST(m.uf_codigo AS TEXT) AS uf_codigo,"
+            f"    CAST(u.{ufs} AS TEXT) AS uf_sigla,"
+            f"    CAST(u.{ufn} AS TEXT) AS uf_nome"
+            f"  FROM municipios_ibge m"
+            f"  LEFT JOIN unidade_federacao u"
+            f"    ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)"
+            f"  WHERE 1=1 {uf_clause}"
             f") "
             f"SELECT q.ano, q.mes, q.cod_municipio,"
-            f"  f.nome_mun AS municipio_nome,"
+            f"  f.nome_mun  AS municipio_nome,"
+            f"  f.uf_codigo AS uf_codigo,"
+            f"  f.uf_sigla  AS uf_sigla,"
+            f"  f.uf_nome   AS uf_nome,"
             f"  CAST(q.total AS FLOAT8) AS total_qtd,"
             f"  CAST(v.total AS FLOAT8) AS total_vl"
             f"{proc_clause}"
