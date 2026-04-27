@@ -332,72 +332,53 @@ def load_consolidated_data(
     selected_ufs: Tuple[str, ...],
     selected_municipios: Tuple[str, ...],
 ) -> pd.DataFrame:
-    """
-    Consulta única com CTE que filtra municípios antes do JOIN entre as tabelas
-    de quantidade e valor, reduzindo a carga no PostgreSQL.
-    Inclui todas as colunas de procedimento (qtd_* / vl_*) com cast para FLOAT4.
-    """
     try:
         conn = get_connection()
         mapping = get_dimension_mapping()
-        qtd_cols, vl_cols = get_procedure_columns()
-        params: Dict[str, object] = {}
+        
+        # 1. Obter colunas de procedimentos (dinâmico)
+        all_cols = get_procedure_columns("aih_qtd")
+        # Filtramos apenas colunas que são códigos de procedimentos (ex: 0301...)
+        proc_cols = [c for c in all_cols if c.isdigit()]
+        # Selecionamos apenas as top 15 para não estourar a memória
+        proc_selection = ", ".join([f"CAST(q.\"{c}\" AS FLOAT4) AS \"q_{c}\"" for c in proc_cols[:15]])
 
-        uf_clause  = _build_in_clause("CAST(m.uf_codigo AS TEXT)", selected_ufs, "uf", params)
-        mun_clause = _build_in_clause(
-            f"CAST(m.{mapping['municipio_code_col']} AS TEXT)", selected_municipios, "mun", params
-        )
-        y_c = _build_in_clause("q.ano", selected_years, "yr", params)
-        m_c = _build_in_clause("q.mes", selected_months, "mo", params)
+        params = {}
+        y_clause = _build_in_clause("q.ano", selected_years, "yr", params)
+        m_clause = _build_in_clause("q.mes", selected_months, "mo", params)
+        
+        # Filtro de UF via Dimensão para acelerar
+        uf_clause = ""
+        if selected_ufs:
+            uf_clause = _build_in_clause("m.uf_codigo", selected_ufs, "uf", params)
 
-        # Projeções para colunas de procedimento com cast para FLOAT4
-        qtd_proj = "".join(
-            f",\n                CAST(q.{c} AS FLOAT4) AS {c}" for c in qtd_cols
-        )
-        vl_proj = "".join(
-            f",\n                CAST(v.{c} AS FLOAT4) AS {c}" for c in vl_cols
-        )
-
+        # SQL Otimizado com CTE
         query = f"""
-            WITH filtered_muns AS (
-                SELECT DISTINCT
-                    m.{mapping['municipio_code_col']}  AS cod_municipio,
-                    m.{mapping['municipio_name_col']}  AS municipio_nome,
-                    u.{mapping['uf_sigla_col']}        AS uf_sigla,
-                    u.{mapping['uf_name_col']}         AS uf_nome
+            WITH filtered_mun AS (
+                SELECT {mapping['municipio_code_col']} as cod_mun, 
+                       {mapping['municipio_name_col']} as nome_mun
                 FROM municipios_ibge m
-                JOIN unidade_federacao u
-                  ON CAST(u.co_uf_prova AS TEXT) = CAST(m.uf_codigo AS TEXT)
-                WHERE 1=1 {uf_clause} {mun_clause}
+                WHERE 1=1 {uf_clause}
             )
-            SELECT
-                q.ano,
-                q.mes,
-                CAST(q.cod_municipio AS TEXT)  AS cod_municipio,
-                fm.municipio_nome,
-                fm.uf_sigla,
-                fm.uf_nome,
-                CAST(q.total AS FLOAT4)        AS total_qtd,
-                CAST(v.total AS FLOAT4)        AS total_vl
-                {qtd_proj}
-                {vl_proj}
+            SELECT 
+                q.ano, q.mes, q.cod_municipio,
+                f.nome_mun AS municipio_nome,
+                CAST(q.total AS FLOAT4) AS total_qtd,
+                CAST(v.total AS FLOAT4) AS total_vl
+                {',' + proc_selection if proc_selection else ""}
             FROM aih_qtd q
-            JOIN aih_vl v
-              ON  v.ano           = q.ano
-              AND v.mes           = q.mes
-              AND v.cod_municipio = q.cod_municipio
-            JOIN filtered_muns fm
-              ON CAST(fm.cod_municipio AS TEXT) = CAST(q.cod_municipio AS TEXT)
-            WHERE 1=1 {y_c} {m_c}
+            INNER JOIN aih_vl v ON v.ano = q.ano AND v.mes = q.mes AND v.cod_municipio = q.cod_municipio
+            INNER JOIN filtered_mun f ON f.cod_mun = q.cod_municipio
+            WHERE 1=1 {y_clause} {m_clause}
         """
+        
         df = conn.query(query, params=params)
-        if df.empty:
-            return pd.DataFrame()
-
+        
+        # Forçar limpeza de memória
         gc.collect()
-        return df.sort_values(["ano", "mes", "uf_nome", "municipio_nome"]).reset_index(drop=True)
-
+        return df
     except Exception as e:
+        st.cache_resource.clear()
         raise e
 
 @st.cache_data(ttl=900)
