@@ -338,7 +338,7 @@ selected_ufs: tuple = ()
 selected_municipios: tuple = ()
 
 with st.sidebar:
-    # 1. BOTÃO DE RESET (Resolve o erro silencioso de troca de modo/conexão)
+    # 1. BOTÃO DE RESET
     if st.button("🔄 Reiniciar Conexão e Cache"):
         st.cache_data.clear()
         st.cache_resource.clear()
@@ -354,7 +354,6 @@ with st.sidebar:
         st.divider()
 
     if _using_fallback and _fb_municipios is not None:
-        # ... (Mantém a lógica de fallback que já estava funcional)
         st.header("Filtros (Modo Offline)")
         with st.form("sidebar_filters_fallback"):
             selected_years = st.multiselect("Ano", options=_years, default=_years)
@@ -370,21 +369,19 @@ with st.sidebar:
             for row in _uf_options.itertuples(index=False)
         }
 
-        # 2. FORMULÁRIO UNIFICADO (Resolve a lentidão de 5 minutos)
+        # 2. FORMULÁRIO UNIFICADO
         with st.form("sidebar_filters_db"):
             selected_years = st.multiselect("Ano", options=_years, default=_years)
             selected_months = st.multiselect("Mês", options=_months, default=_months)
             selected_uf_labels = st.multiselect(
                 "Unidade da Federação (UF)",
                 options=list(uf_label_to_code.keys()),
-                default=list(uf_label_to_code.keys())[:1], # Default apenas 1 para performance inicial
+                default=list(uf_label_to_code.keys())[:1],
             )
             
-            # Nota: O filtro de municípios fica fora do form para carregar dinamicamente,
-            # mas a CARGA DOS DADOS (query pesada) só ocorre no clique deste botão:
             _form_submitted = st.form_submit_button("🔍 Aplicar Filtros e Atualizar Dashboard")
 
-        # Persistência do estado para evitar recargas acidentais
+        # Persistência do estado
         _submitted_ufs_codes = tuple(uf_label_to_code[lbl] for lbl in selected_uf_labels)
         
         if _form_submitted or "_submitted_ufs" not in st.session_state:
@@ -392,7 +389,7 @@ with st.sidebar:
             st.session_state["last_submitted_years"] = tuple(selected_years)
             st.session_state["last_submitted_months"] = tuple(selected_months)
 
-        # Filtro de Municípios (Dependente da UF, mas sem disparar a query de 5min)
+        # Filtro de Municípios (Dependente da UF)
         municipio_options_df = load_municipality_options(st.session_state["_submitted_ufs"])
         municipio_label_to_code = {
             f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
@@ -410,12 +407,12 @@ with st.sidebar:
         selected_ufs = st.session_state["_submitted_ufs"]
         selected_years_tuple = st.session_state.get("last_submitted_years", tuple(selected_years))
         selected_months_tuple = st.session_state.get("last_submitted_months", tuple(selected_months))
+        
         if _using_fallback and not selected_municipio_labels:
-			# Se estiver no fallback e nada foi selecionado, pega todos os códigos do dicionário
-			selected_municipios = tuple(municipio_label_to_code.values())
-		else:
-			selected_municipios = tuple(municipio_label_to_code[label] for label in selected_municipio_labels)
-			
+            selected_municipios = tuple(municipio_label_to_code.values())
+        else:
+            selected_municipios = tuple(municipio_label_to_code[label] for label in selected_municipio_labels)
+            
         st.caption(
             "ℹ️ Os gráficos **Ranking Top 10**, **Scatter Plot** e **Heatmap Sazonal** sempre exibem "
             "todos os municípios da UF selecionada, independentemente deste filtro."
