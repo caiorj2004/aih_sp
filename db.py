@@ -345,8 +345,8 @@ def load_consolidated_data(
         conn = get_connection()
         mapping = get_dimension_mapping()
 
-        # 1. Listas fixas de colunas de procedimento (confirmadas pelo dicionário de dados).
-        # Não dependemos de get_procedure_columns() nem de cache para montar o SQL.
+        # Listas fixas confirmadas pelo dicionário de dados.
+        # qtd_0417 (Anestesiologia) NÃO existe em aih_qtd — apenas em aih_vl.
         _QTD_PROC_COLS = [
             "qtd_0101","qtd_0201","qtd_0202","qtd_0203","qtd_0204","qtd_0205",
             "qtd_0206","qtd_0207","qtd_0208","qtd_0209","qtd_0210","qtd_0211",
@@ -355,7 +355,7 @@ def load_consolidated_data(
             "qtd_0310","qtd_0311","qtd_0401","qtd_0402","qtd_0403","qtd_0404",
             "qtd_0405","qtd_0406","qtd_0407","qtd_0408","qtd_0409","qtd_0410",
             "qtd_0411","qtd_0412","qtd_0413","qtd_0414","qtd_0415","qtd_0416",
-            "qtd_0417","qtd_0418","qtd_0501","qtd_0502","qtd_0503","qtd_0504",
+            "qtd_0418","qtd_0501","qtd_0502","qtd_0503","qtd_0504",
             "qtd_0505","qtd_0506","qtd_0603","qtd_0702","qtd_0801","qtd_0802",
         ]
         _VL_PROC_COLS = [
@@ -376,35 +376,29 @@ def load_consolidated_data(
         params = {}
         y_clause = _build_in_clause("q.ano", selected_years, "yr", params)
         m_clause = _build_in_clause("q.mes", selected_months, "mo", params)
-        
-        # Filtro de UF via Dimensão para acelerar
+
         uf_clause = ""
         if selected_ufs:
             uf_clause = _build_in_clause("m.uf_codigo", selected_ufs, "uf", params)
 
-        # SQL Otimizado com CTE
+        mc = mapping['municipio_code_col']
+        mn = mapping['municipio_name_col']
         query = (
-            "WITH filtered_mun AS ("
-            f"  SELECT {mapping['municipio_code_col']} as cod_mun,"
-            f"         {mapping['municipio_name_col']} as nome_mun"
-            "   FROM municipios_ibge m"
-            f"  WHERE 1=1 {uf_clause}"
-            ") "
-            "SELECT"
-            "  q.ano, q.mes, q.cod_municipio,"
-            "  f.nome_mun AS municipio_nome,"
-            "  CAST(q.total AS FLOAT8) AS total_qtd,"
-            "  CAST(v.total AS FLOAT8) AS total_vl,"
+            f"WITH filtered_mun AS ("
+            f"  SELECT {mc} as cod_mun, {mn} as nome_mun"
+            f"  FROM municipios_ibge m WHERE 1=1 {uf_clause}"
+            f") "
+            f"SELECT q.ano, q.mes, q.cod_municipio, f.nome_mun AS municipio_nome,"
+            f" CAST(q.total AS FLOAT8) AS total_qtd,"
+            f" CAST(v.total AS FLOAT8) AS total_vl,"
             f" {proc_selection}"
-            " FROM aih_qtd q"
-            " INNER JOIN aih_vl v ON v.ano = q.ano AND v.mes = q.mes AND v.cod_municipio = q.cod_municipio"
-            " INNER JOIN filtered_mun f ON f.cod_mun = q.cod_municipio"
+            f" FROM aih_qtd q"
+            f" INNER JOIN aih_vl v ON v.ano=q.ano AND v.mes=q.mes AND v.cod_municipio=q.cod_municipio"
+            f" INNER JOIN filtered_mun f ON f.cod_mun=q.cod_municipio"
             f" WHERE 1=1 {y_clause} {m_clause}"
         )
-        
+
         df = conn.query(query, params=params)
-        
-        # Forçar limpeza de memória
         gc.collect()
         return df
     except Exception as e:
