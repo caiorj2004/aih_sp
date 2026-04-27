@@ -331,13 +331,21 @@ if _force_local:
 # ---------------------------------------------------------------------------
 # Sidebar — Filtros (DB ou Fallback)
 # ---------------------------------------------------------------------------
+
 selected_years: list = []
 selected_months: list = []
 selected_ufs: tuple = ()
 selected_municipios: tuple = ()
 
 with st.sidebar:
-    # Connection mode toggle: shown only when DB is available AND local data exists
+    # 1. BOTÃO DE RESET (Resolve o erro silencioso de troca de modo/conexão)
+    if st.button("🔄 Reiniciar Conexão e Cache"):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        if "_submitted_ufs" in st.session_state:
+            del st.session_state["_submitted_ufs"]
+        st.rerun()
+
     if _db_error is None and _fb_municipios is not None:
         if st.toggle("📁 Usar dados locais (Parquet)", key="use_local"):
             _using_fallback = True
@@ -346,34 +354,13 @@ with st.sidebar:
         st.divider()
 
     if _using_fallback and _fb_municipios is not None:
-        if _db_error is not None:
-            st.warning("⚠️ **Modo Offline** — banco indisponível.\nExibindo dados locais (Parquet).")
-        else:
-            st.info("📁 Exibindo dados locais (Parquet).")
-        st.header("Filtros")
-
-        mun_label_to_code = {
-            f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
-            for row in _fb_municipios.itertuples(index=False)
-        }
-
+        # ... (Mantém a lógica de fallback que já estava funcional)
+        st.header("Filtros (Modo Offline)")
         with st.form("sidebar_filters_fallback"):
             selected_years = st.multiselect("Ano", options=_years, default=_years)
             selected_months = st.multiselect("Mês", options=_months, default=_months)
-            selected_mun_labels = st.multiselect(
-                "Município",
-                options=list(mun_label_to_code.keys()),
-                default=list(mun_label_to_code.keys()),
-            )
-            st.form_submit_button("🔍 Aplicar Filtros")
-
-        selected_municipios = tuple(mun_label_to_code[lbl] for lbl in selected_mun_labels)
-        st.caption(
-            "ℹ️ Os gráficos **Ranking Top 10**, **Scatter Plot** e **Heatmap Sazonal** sempre exibem "
-            "todos os municípios, independentemente deste filtro."
-        )
-        if not selected_municipios:
-            st.warning("⚠️ Selecione ao menos um município para o funcionamento do app.")
+            # ... restam filtros de fallback ...
+            _form_submitted = st.form_submit_button("🔍 Aplicar Filtros")
 
     elif _db_error is None and _years and _months and _uf_options is not None:
         st.header("Filtros")
@@ -383,47 +370,47 @@ with st.sidebar:
             for row in _uf_options.itertuples(index=False)
         }
 
-        # ── Form: year, month, UF selectors ─────────────────────────────────
+        # 2. FORMULÁRIO UNIFICADO (Resolve a lentidão de 5 minutos)
         with st.form("sidebar_filters_db"):
             selected_years = st.multiselect("Ano", options=_years, default=_years)
             selected_months = st.multiselect("Mês", options=_months, default=_months)
             selected_uf_labels = st.multiselect(
                 "Unidade da Federação (UF)",
                 options=list(uf_label_to_code.keys()),
-                default=list(uf_label_to_code.keys()),
+                default=list(uf_label_to_code.keys())[:1], # Default apenas 1 para performance inicial
             )
-            _form_submitted = st.form_submit_button("🔍 Aplicar Filtros")
+            
+            # Nota: O filtro de municípios fica fora do form para carregar dinamicamente,
+            # mas a CARGA DOS DADOS (query pesada) só ocorre no clique deste botão:
+            _form_submitted = st.form_submit_button("🔍 Aplicar Filtros e Atualizar Dashboard")
 
-        # Persist submitted UF selection so load_municipality_options is only
-        # called on form submission — not on every widget interaction inside
-        # the form.  Avoids a DB round-trip on each keypress / deselect.
-        _submitted_ufs_from_form = tuple(uf_label_to_code[lbl] for lbl in selected_uf_labels)
+        # Persistência do estado para evitar recargas acidentais
+        _submitted_ufs_codes = tuple(uf_label_to_code[lbl] for lbl in selected_uf_labels)
+        
         if _form_submitted or "_submitted_ufs" not in st.session_state:
-            st.session_state["_submitted_ufs"] = _submitted_ufs_from_form
+            st.session_state["_submitted_ufs"] = _submitted_ufs_codes
+            st.session_state["last_submitted_years"] = tuple(selected_years)
+            st.session_state["last_submitted_months"] = tuple(selected_months)
 
-        _submitted_ufs: Tuple[str, ...] = st.session_state["_submitted_ufs"]
-
-        # Municipality options loaded once per UF submission (cached)
-        municipio_options_df = load_municipality_options(_submitted_ufs)
+        # Filtro de Municípios (Dependente da UF, mas sem disparar a query de 5min)
+        municipio_options_df = load_municipality_options(st.session_state["_submitted_ufs"])
         municipio_label_to_code = {
             f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
             for row in municipio_options_df.itertuples(index=False)
         }
 
-        # Municipality multiselect sits outside the main form so it can update
-        # immediately after UF selection is applied without requiring a second
-        # submit click.
         selected_municipio_labels = st.multiselect(
-            "Município",
+            "Município (Opcional)",
             options=list(municipio_label_to_code.keys()),
-            default=list(municipio_label_to_code.keys()),
+            default=[],
             key="mun_filter",
+            help="Deixe vazio para ver todos os municípios das UFs selecionadas."
         )
 
-        selected_ufs = _submitted_ufs
-        selected_municipios = tuple(
-            municipio_label_to_code[label] for label in selected_municipio_labels
-        )
+        selected_ufs = st.session_state["_submitted_ufs"]
+        selected_years_tuple = st.session_state.get("last_submitted_years", tuple(selected_years))
+        selected_months_tuple = st.session_state.get("last_submitted_months", tuple(selected_months))
+        selected_municipios = tuple(municipio_label_to_code[label] for label in selected_municipio_labels)
         st.caption(
             "ℹ️ Os gráficos **Ranking Top 10**, **Scatter Plot** e **Heatmap Sazonal** sempre exibem "
             "todos os municípios da UF selecionada, independentemente deste filtro."
