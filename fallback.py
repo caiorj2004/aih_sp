@@ -83,6 +83,31 @@ def get_fallback_filter_options() -> Tuple[List[str], List[str], pd.DataFrame]:
 # ---------------------------------------------------------------------------
 
 
+def _coerce_numeric_proc_cols(df: pd.DataFrame, prefixes: Tuple[str, ...]) -> pd.DataFrame:
+    """
+    Converte para float todas as colunas cujo nome começa com qualquer um dos
+    prefixos fornecidos (ex.: 'qtd_', 'vl_', 'total').
+
+    Os arquivos Parquet gerados a partir do DATASUS/TabNet podem conter hífens
+    ('-') representando zeros e vírgulas (',') como separadores decimais.
+    Esta função normaliza esses valores antes da coerção numérica, espelhando
+    o tratamento feito via CAST(... AS FLOAT8) nas consultas do db.py.
+    """
+    for col in df.columns:
+        if col.startswith(prefixes):
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.strip()
+                # Hífen isolado representa zero no TabNet
+                .str.replace(r"^\s*-\s*$", "0", regex=True)
+                # Vírgula como separador decimal → ponto
+                .str.replace(",", ".", regex=False)
+            )
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+    return df
+
+
 def load_fallback_consolidated(
     selected_years: Tuple[str, ...],
     selected_months: Tuple[str, ...],
@@ -92,6 +117,9 @@ def load_fallback_consolidated(
     Filtra e mescla os parquets de quantidade e valor.
     Retorna DataFrame com as colunas:
         ano, mes, cod_municipio, municipio_nome, total_qtd, total_vl, qtd_*, vl_*
+
+    Todas as colunas numéricas (total_qtd, total_vl, qtd_*, vl_*) são
+    garantidamente do tipo float64, equivalente ao CAST(... AS FLOAT8) do db.py.
     """
     qtd, vl = load_fallback_raw()
 
@@ -127,8 +155,15 @@ def load_fallback_consolidated(
     )
 
     df = qtd_sel.merge(vl_sel, on=merge_keys, how="left")
-    df["total_qtd"] = pd.to_numeric(df["total_qtd"], errors="coerce")
-    df["total_vl"] = pd.to_numeric(df["total_vl"], errors="coerce")
+
+    # -----------------------------------------------------------------------
+    # CORREÇÃO: converte TODAS as colunas numéricas para float64.
+    # Antes desta correção apenas total_qtd e total_vl eram coagidos, deixando
+    # as colunas qtd_* e vl_* como object/string (com hífens e vírgulas do
+    # TabNet). Isso impedia o app de exibi-las nos gráficos, estatísticas e
+    # seletores de procedimento no modo fallback.
+    # -----------------------------------------------------------------------
+    df = _coerce_numeric_proc_cols(df, prefixes=("qtd_", "vl_", "total_qtd", "total_vl"))
 
     df["_mes_num"] = df["mes"].apply(month_to_num)
     return (
@@ -158,9 +193,22 @@ def get_fallback_period_totals(
         mask_q &= qtd["cod_municipio"].isin(selected_municipios)
         mask_v &= vl["cod_municipio"].isin(selected_municipios)
 
-    total_qtd = float(qtd[mask_q]["total"].sum())
-    total_vl = float(vl[mask_v]["total"].sum())
-    return total_qtd, total_vl
+    # Aplica a mesma coerção numérica à coluna 'total' antes de somar
+    total_qtd_series = pd.to_numeric(
+        qtd[mask_q]["total"].astype(str).str.strip()
+            .str.replace(r"^\s*-\s*$", "0", regex=True)
+            .str.replace(",", ".", regex=False),
+        errors="coerce",
+    ).fillna(0.0)
+
+    total_vl_series = pd.to_numeric(
+        vl[mask_v]["total"].astype(str).str.strip()
+            .str.replace(r"^\s*-\s*$", "0", regex=True)
+            .str.replace(",", ".", regex=False),
+        errors="coerce",
+    ).fillna(0.0)
+
+    return float(total_qtd_series.sum()), float(total_vl_series.sum())
 
 
 # ---------------------------------------------------------------------------
