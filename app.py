@@ -937,22 +937,32 @@ with tab_charts:
             st.plotly_chart(fig_scatter, width="stretch")
 
             # Cálculo da Correlação
+            # Força coerção numérica para evitar TypeError no pandas 3.x quando
+            # colunas têm dtype object ou contêm NA residual.
             _CORR_METHOD_MAP = {"Pearson": "pearson", "Spearman": "spearman"}
             _cm = _CORR_METHOD_MAP[corr_method]
-            
-            if _cm == "spearman":
-                # Spearman via postos (ranks)
-                _s1 = scatter_df[scatter_x].rank()
-                _s2 = scatter_df[scatter_y].rank()
-                _corr_val = _s1.corr(_s2)
-            else:
-                _corr_val = scatter_df[scatter_x].corr(scatter_df[scatter_y])
 
-            if pd.notna(_corr_val):
+            _x_series = pd.to_numeric(scatter_df[scatter_x], errors="coerce").dropna()
+            _y_series = pd.to_numeric(scatter_df[scatter_y], errors="coerce").dropna()
+            # Alinha os índices após dropna para garantir mesmo tamanho
+            _common_idx = _x_series.index.intersection(_y_series.index)
+            _x_series = _x_series.loc[_common_idx]
+            _y_series = _y_series.loc[_common_idx]
+
+            _corr_val = None
+            if len(_x_series) >= 2:
+                if _cm == "spearman":
+                    _corr_val = _x_series.rank().corr(_y_series.rank())
+                else:
+                    _corr_val = _x_series.corr(_y_series)
+
+            if _corr_val is not None and pd.notna(_corr_val):
                 st.caption(
                     f"Correlação de {corr_method} entre {col_label(scatter_x)} e "
                     f"{col_label(scatter_y)}: **{_corr_val:.3f}**"
                 )
+            elif len(_x_series) < 2:
+                st.caption("Dados insuficientes para calcular correlação (mínimo 2 pontos).")
 
             st.markdown(
                 """
