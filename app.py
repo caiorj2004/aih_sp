@@ -410,7 +410,12 @@ with st.sidebar:
         selected_ufs = st.session_state["_submitted_ufs"]
         selected_years_tuple = st.session_state.get("last_submitted_years", tuple(selected_years))
         selected_months_tuple = st.session_state.get("last_submitted_months", tuple(selected_months))
-        selected_municipios = tuple(municipio_label_to_code[label] for label in selected_municipio_labels)
+        if _using_fallback and not selected_municipio_labels:
+			# Se estiver no fallback e nada foi selecionado, pega todos os códigos do dicionário
+			selected_municipios = tuple(municipio_label_to_code.values())
+		else:
+			selected_municipios = tuple(municipio_label_to_code[label] for label in selected_municipio_labels)
+			
         st.caption(
             "ℹ️ Os gráficos **Ranking Top 10**, **Scatter Plot** e **Heatmap Sazonal** sempre exibem "
             "todos os municípios da UF selecionada, independentemente deste filtro."
@@ -712,22 +717,22 @@ with tab_charts:
             df = df_charts           # Alias para gráficos 1 e 4 (filtrados por município)
             df_all = df_charts_all   # Alias para gráficos 2 e 3 (todos os municípios)
 
-            # --- CORREÇÃO DO UNPACKING ERROR ---
+            # --- BUSCA DINÂMICA DE TODAS AS VARIÁVEIS DO BANCO ---
             if _using_fallback:
                 qtd_proc_cols, vl_proc_cols = get_fallback_procedure_columns()
             else:
-                # 1. Busca os códigos brutos do banco (retorna uma única lista)
+                # 1. Busca todos os códigos numéricos brutos da tabela aih_qtd
                 all_cols_raw = get_procedure_columns("aih_qtd")
                 proc_codes = [c for c in all_cols_raw if c.isdigit()]
                 
-                # 2. Reconstrói as listas com os prefixos q_ e v_ usados no DataFrame consolidado
+                # 2. Adiciona os prefixos q_ e v_ que o load_consolidated_data cria no SQL
                 qtd_proc_cols = [f"q_{c}" for c in proc_codes]
                 vl_proc_cols = [f"v_{c}" for c in proc_codes]
 
-            # Filtra apenas colunas que realmente existem no DataFrame (evita KeyError)
+            # 3. Filtra apenas o que realmente chegou no DataFrame para evitar erros
             avail_qtd_cols = ["total_qtd"] + [c for c in qtd_proc_cols if c in df_all.columns]
             avail_vl_cols = ["total_vl"] + [c for c in vl_proc_cols if c in df_all.columns]
-
+			
             # 1. Série temporal
             st.subheader("1) Série temporal")
             ts_c1, ts_c2 = st.columns(2)
