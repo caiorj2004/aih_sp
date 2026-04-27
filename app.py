@@ -783,6 +783,12 @@ with tab_charts:
                 )
             
             # Preparação dos dados para a série temporal
+            # Valida que as colunas selecionadas existem no df atual
+            if serie_qtd_col not in df.columns:
+                serie_qtd_col = "total_qtd" if "total_qtd" in df.columns else df.columns[0]
+            if serie_vl_col not in df.columns:
+                serie_vl_col = "total_vl" if "total_vl" in df.columns else df.columns[0]
+
             series = (
                 df.groupby(["ano", "mes"], as_index=False)[[serie_qtd_col, serie_vl_col]]
                 .sum()
@@ -904,22 +910,31 @@ with tab_charts:
                 )
 
             # --- LÓGICA DE AGRUPAMENTO DINÂMICA (CORREÇÃO DE KEYERROR) ---
+            # Garante que scatter_x e scatter_y existem no df_all antes de qualquer
+            # operação. O session_state do Streamlit pode conter um valor de
+            # reexecução anterior que não está mais disponível (ex.: ao trocar o
+            # radio de correlação com filtros diferentes ativos).
+            if scatter_x not in df_all.columns:
+                scatter_x = "total_qtd" if "total_qtd" in df_all.columns else df_all.columns[0]
+            if scatter_y not in df_all.columns:
+                scatter_y = "total_vl" if "total_vl" in df_all.columns else df_all.columns[0]
+
             # Define colunas de agrupamento seguras
             group_cols = []
             if 'cod_municipio' in df_all.columns:
                 group_cols.append('cod_municipio')
             if 'municipio_nome' in df_all.columns:
                 group_cols.append('municipio_nome')
-            
+
             # Tenta incluir UF para o detalhamento (hover), mas protege contra ausência
-            hover_fields = ["municipio_nome"]
+            hover_fields = ["municipio_nome"] if "municipio_nome" in df_all.columns else []
             if 'uf_nome' in df_all.columns:
                 group_cols.append('uf_nome')
                 hover_fields.append('uf_nome')
             elif 'uf_codigo' in df_all.columns:
                 group_cols.append('uf_codigo')
-            
-            # Executa o agrupamento
+
+            # Executa o agrupamento — colunas de métrica validadas acima
             scatter_df = (
                 df_all.groupby(group_cols, as_index=False)[[scatter_x, scatter_y]]
                 .sum()
@@ -1067,7 +1082,11 @@ with tab_charts:
                 lambda n: _MONTH_ABBR_PT[n - 1] if 1 <= n <= 12 else str(n)
             )
 
-            if hm_y_axis == "UF" and not _using_fallback:
+            # Valida hm_metric contra colunas reais do df (session_state pode estar stale)
+            if hm_metric not in _hm_df.columns:
+                hm_metric = "total_qtd" if "total_qtd" in _hm_df.columns else "total_vl"
+
+            if hm_y_axis == "UF" and not _using_fallback and "uf_nome" in _hm_df.columns:
                 _hm_group_col = "uf_nome"
             else:
                 _hm_group_col = "ano"
