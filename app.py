@@ -608,9 +608,21 @@ with tab_kpis:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
             st.subheader("Resumo Estatístico")
-            qtd_proc_cols, vl_proc_cols = (
-                get_fallback_procedure_columns() if _using_fallback else get_procedure_columns()
-            )
+            if _using_fallback:
+				# O fallback já costuma retornar o par de listas
+				qtd_proc_cols, vl_proc_cols = get_fallback_procedure_columns()
+			else:
+				# 1. Busca a lista bruta de colunas da tabela de quantidade
+				all_cols = get_procedure_columns("aih_qtd")
+    
+				# 2. Filtra apenas os nomes que são códigos numéricos (procedimentos)
+				proc_codes = [c for c in all_cols if c.isdigit()]
+    
+				# 3. Reconstrói os nomes das colunas com os prefixos usados no DataFrame
+				# Nota: Se no seu db.py você usou "qtd_" em vez de "q_", ajuste abaixo.
+				qtd_proc_cols = [f"q_{c}" for c in proc_codes]
+				vl_proc_cols = [f"v_{c}" for c in proc_codes]
+				
             all_metric_cols = (
                 ["total_qtd", "total_vl"]
                 + [c for c in qtd_proc_cols if c in df_stats.columns]
