@@ -2,25 +2,25 @@
 app.py
 ------
 Dashboard interativo AIH SUS (DATASUS) — Streamlit.
- 
+
 Toda a lógica de banco de dados está em db.py.
 As credenciais são lidas dos secrets do Streamlit Cloud
 (Advanced Settings > Secrets) ou, localmente, do arquivo
 .streamlit/secrets.toml (não versionado).
- 
+
 Fallback: se a conexão com o banco falhar, o app carrega os dados locais
 (Parquet) do módulo fallback.py, com funcionalidades adaptadas à ausência
 de colunas de UF.
 """
- 
+
 import io
 from typing import Optional, Tuple
- 
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
- 
+
 from db import (
     calculate_average_ticket,
     get_period_totals,
@@ -37,19 +37,19 @@ from fallback import (
     get_fallback_procedure_columns,
     load_fallback_consolidated,
 )
- 
+
 # ---------------------------------------------------------------------------
 # Configuração da página
 # ---------------------------------------------------------------------------
 st.set_page_config(page_title="Dashboard AIH SUS", page_icon="📊", layout="wide")
- 
+
 BR_CURRENCY_TRANS = str.maketrans({",": ".", ".": ","})
- 
- 
+
+
 def format_currency(value: float) -> str:
     return f"R$ {value:,.2f}".translate(BR_CURRENCY_TRANS)
- 
- 
+
+
 def br_format(value, decimals: int = 0) -> str:
     """Format a number using Brazilian locale (. thousands, , decimal)."""
     if pd.isna(value):
@@ -58,15 +58,15 @@ def br_format(value, decimals: int = 0) -> str:
         return f"{float(value):,.{decimals}f}".translate(BR_CURRENCY_TRANS)
     except (ValueError, TypeError):
         return str(value)
- 
- 
+
+
 def format_delta(current: float, previous: float) -> Optional[str]:
     if abs(previous) < 1e-9:
         return None
     delta = ((current - previous) / previous) * 100
     return f"{delta:+.2f}%"
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Dicionário de labels — baseado no relatório de definição de dados
 # ---------------------------------------------------------------------------
@@ -126,7 +126,7 @@ _PROC_NAMES = {
     "0801": "Ações relacionadas ao estabelecimento",
     "0802": "Ações relacionadas ao atendimento",
 }
- 
+
 COLUMN_LABELS: dict = {
     "ano": "Ano de competência",
     "mes": "Mês de competência",
@@ -139,19 +139,19 @@ COLUMN_LABELS: dict = {
     **{f"qtd_{code}": f"Qtd – {code} {name}" for code, name in _PROC_NAMES.items()},
     **{f"vl_{code}": f"Vl – {code} {name}" for code, name in _PROC_NAMES.items()},
 }
- 
- 
+
+
 def col_label(col: str) -> str:
     """Retorna o label legível para uma coluna, usando o dicionário de dados."""
     return COLUMN_LABELS.get(col, col)
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Título e descrição
 # ---------------------------------------------------------------------------
 st.title("📊 Dashboard AIH SUS (DATASUS)")
 st.caption("Análise de Autorizações de Internação Hospitalar com filtros hierárquicos.")
- 
+
 # ---------------------------------------------------------------------------
 # Abas principais — Introdução sempre visível, dados carregados sob demanda
 # ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ tab_intro, tab_raw, tab_kpis, tab_charts = st.tabs(
         "Gráficos Analíticos",
     ]
 )
- 
+
 # ── 🏠 Introdução ─────────────────────────────────────────────────────────────
 with tab_intro:
     st.header("Sobre o Projeto")
@@ -173,14 +173,14 @@ with tab_intro:
         desenvolvido para analisar as **Autorizações de Internação Hospitalar (AIH)**
         disponibilizadas pelo DATASUS, órgão do Ministério da Saúde responsável pela
         gestão das informações do Sistema Único de Saúde (SUS).
- 
+
         Os dados exibidos aqui representam os procedimentos hospitalares realizados
         nos municípios brasileiros, consolidando **quantidades aprovadas** e
         **valores financeiros repassados** mês a mês, por município e por grupo de
         procedimento médico.
         """
     )
- 
+
     st.subheader("🔬 Origem dos Dados")
     st.markdown(
         """
@@ -192,7 +192,7 @@ with tab_intro:
         e formatos de exportação — para coletar os dados de 25 meses históricos.
         """
     )
- 
+
     st.subheader("⚙️ Pipeline de Engenharia de Dados")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -225,7 +225,7 @@ with tab_intro:
             - Conexão via `SQLAlchemy` com o SGBD do IESB
             """
         )
- 
+
     st.subheader("📱 Sobre este Aplicativo")
     st.markdown(
         """
@@ -234,7 +234,7 @@ with tab_intro:
         Toda a lógica de acesso ao banco está encapsulada no módulo `db.py`,
         que utiliza CTEs recursivas (*loose index scan*) para varredura eficiente
         dos índices e `st.cache_data` para minimizar consultas repetidas.
- 
+
         **Funcionalidades disponíveis:**
         - **Filtros hierárquicos** na barra lateral: Ano → Mês → UF → Município
         - **KPIs em tempo real** com delta em relação ao período imediatamente anterior
@@ -243,7 +243,7 @@ with tab_intro:
         - **Gráficos analíticos**: série temporal, ranking Top 10, scatter plot e treemap por categoria de procedimento
         """
     )
- 
+
     st.subheader("🔄 Modo Offline (Fallback)")
     st.markdown(
         """
@@ -251,12 +251,12 @@ with tab_intro:
         aplicativo ativa automaticamente um **modo offline** (*fallback*), carregando
         os dados diretamente de arquivos **Parquet** armazenados localmente na pasta
         `data/` do repositório.
- 
+
         Esses arquivos foram gerados a partir dos exports brutos do **TabNet** e,
         por essa razão, **não possuem coluna de Unidade da Federação (UF)** — os dados
         chegam apenas com granularidade municipal. Como consequência, quando o fallback
         está ativo:
- 
+
         - O filtro **UF** é removido da barra lateral; apenas Município fica disponível.
         - O gráfico de **Ranking Top 10** opera exclusivamente no nível de Município
           (a opção de ranking por UF é ocultada).
@@ -264,23 +264,23 @@ with tab_intro:
         - O indicador *"UFs no recorte"* é suprimido da aba de Estatísticas Descritivas.
         - Uma faixa de aviso ⚠️ é exibida na barra lateral para informar que o painel
           está em modo offline.
- 
+
         Os demais recursos — série temporal, treemap por categoria, KPIs com delta e
         export para CSV — funcionam normalmente.
         """
     )
- 
+
     st.info(
         "💡 Para explorar os dados, aplique os filtros na barra lateral "
         "e navegue pelas abas ao lado.",
         icon="👈",
     )
- 
+
 # ---------------------------------------------------------------------------
 # Carregamento inicial — tenta DB; usa fallback Parquet em caso de falha
 # ---------------------------------------------------------------------------
 _db_error: Optional[Exception] = None
- 
+
 # Detect mode changes so we can clear stale widget state before rendering.
 _curr_use_local: bool = st.session_state.get("use_local", False)
 _prev_use_local: Optional[bool] = st.session_state.get("_prev_use_local", None)
@@ -291,17 +291,17 @@ if _prev_use_local is not None and _prev_use_local != _curr_use_local:
         if _k.startswith("sidebar_filters_") or _k in ("_submitted_ufs",):
             del st.session_state[_k]
 st.session_state["_prev_use_local"] = _curr_use_local
- 
+
 _force_local: bool = _curr_use_local
 _using_fallback: bool = _force_local
- 
+
 _years: list = []
 _months: list = []
 _uf_options = None
 _fb_municipios: Optional[pd.DataFrame] = None
 _fb_years: list = []
 _fb_months: list = []
- 
+
 if not _force_local:
     try:
         _years, _months, _uf_options = load_filter_options()
@@ -313,30 +313,30 @@ if not _force_local:
             _years, _months = _fb_years, _fb_months
         except Exception:
             pass
- 
+
 # Pre-load fallback options when DB is available so the connection toggle works
 if _db_error is None and not _force_local:
     try:
         _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
     except Exception:
         pass  # fallback files unavailable; toggle will be hidden
- 
+
 if _force_local:
     try:
         _fb_years, _fb_months, _fb_municipios = get_fallback_filter_options()
         _years, _months = _fb_years, _fb_months
     except Exception:
         pass
- 
+
 # ---------------------------------------------------------------------------
 # Sidebar — Filtros (DB ou Fallback)
 # ---------------------------------------------------------------------------
- 
+
 selected_years: list = []
 selected_months: list = []
 selected_ufs: tuple = ()
 selected_municipios: tuple = ()
- 
+
 with st.sidebar:
     # 1. BOTÃO DE RESET
     if st.button("🔄 Reiniciar Conexão e Cache"):
@@ -344,14 +344,14 @@ with st.sidebar:
         st.cache_resource.clear()
         st.session_state.clear()
         st.rerun()
- 
+
     if _db_error is None and _fb_municipios is not None:
         if st.toggle("📁 Usar dados locais (Parquet)", key="use_local"):
             _using_fallback = True
             _years = _fb_years
             _months = _fb_months
         st.divider()
- 
+
     # --- INÍCIO DA ÁREA DE FILTROS ---
     if _using_fallback:
         st.header("Filtros (Modo Offline)")
@@ -359,26 +359,39 @@ with st.sidebar:
         selected_months = st.multiselect("Mês", options=_months, default=_months)
         
         # Filtro de município para modo Fallback.
-        # _fb_municipios é um DataFrame; é preciso extrair a coluna de nome antes de ordenar.
+        # _fb_municipios é um DataFrame com colunas cod_municipio e municipio_nome.
+        # O multiselect exibe os nomes, mas load_fallback_consolidated filtra por cod_municipio.
         _mun_name_col = next(
-            (c for c in ("municipio_nome", "no_municipio", "municipio", "nome") if c in _fb_municipios.columns),
+            (c for c in ("municipio_nome", "no_municipio", "municipio", "nome")
+             if c in _fb_municipios.columns),
             _fb_municipios.columns[0],
         )
-        municipio_options = sorted(_fb_municipios[_mun_name_col].dropna().unique().tolist())
+        _mun_code_col = next(
+            (c for c in ("cod_municipio", "codigo_municipio", "codigo")
+             if c in _fb_municipios.columns),
+            _fb_municipios.columns[0],
+        )
+        # Mapa nome legível → código IBGE (mesmo padrão do filtro de UF online)
+        _mun_label_to_code = {
+            row[_mun_name_col]: row[_mun_code_col]
+            for _, row in _fb_municipios.iterrows()
+        }
+        municipio_options = sorted(_mun_label_to_code.keys())
         selected_mun_labels = st.multiselect("Município (Opcional)", options=municipio_options, default=[])
         
         selected_years_tuple = tuple(selected_years)
         selected_months_tuple = tuple(selected_months)
         selected_ufs = ()
-        selected_municipios = tuple(selected_mun_labels)
- 
+        # Converte nomes selecionados → códigos IBGE para o filtro da função de dados
+        selected_municipios = tuple(_mun_label_to_code[lbl] for lbl in selected_mun_labels)
+
     elif _db_error is None and _years and _months and _uf_options is not None:
         st.header("Filtros")
         uf_label_to_code = {
             f"{row.uf_sigla} — {row.uf_nome}": row.uf_codigo
             for row in _uf_options.itertuples(index=False)
         }
- 
+
         # 2. FORMULÁRIO UNIFICADO (Modo Online)
         with st.form("sidebar_filters_db"):
             selected_years = st.multiselect("Ano", options=_years, default=_years)
@@ -389,25 +402,25 @@ with st.sidebar:
                 default=list(uf_label_to_code.keys())[:1],
             )
             _form_submitted = st.form_submit_button("🔍 Aplicar Filtros e Atualizar Dashboard")
- 
+
         # Persistência e Processamento das UFs
         _submitted_ufs_codes = tuple(uf_label_to_code[lbl] for lbl in selected_uf_labels)
         if _form_submitted or "_submitted_ufs" not in st.session_state:
             st.session_state["_submitted_ufs"] = _submitted_ufs_codes
             st.session_state["last_submitted_years"] = tuple(selected_years)
             st.session_state["last_submitted_months"] = tuple(selected_months)
- 
+
         selected_ufs = st.session_state["_submitted_ufs"]
         selected_years_tuple = st.session_state.get("last_submitted_years", tuple(selected_years))
         selected_months_tuple = st.session_state.get("last_submitted_months", tuple(selected_months))
- 
+
         # Filtro de Municípios dinâmico para Modo Online
         municipio_options_df = load_municipality_options(selected_ufs)
         municipio_label_to_code = {
             f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
             for row in municipio_options_df.itertuples(index=False)
         }
- 
+
         selected_mun_labels = st.multiselect(
             "Município (Opcional)",
             options=list(municipio_label_to_code.keys()),
@@ -415,13 +428,13 @@ with st.sidebar:
             key="mun_filter_db"
         )
         selected_municipios = tuple(municipio_label_to_code[label] for label in selected_mun_labels)
- 
+
     st.caption(
         "ℹ️ Os gráficos **Ranking Top 10**, **Scatter Plot** e **Heatmap Sazonal** sempre exibem "
         "todos os municípios da UF selecionada, independentemente deste filtro."
     )
- 
- 
+
+
 def _render_db_unavailable() -> None:
     """Exibe mensagem de erro total (DB + fallback ambos falharam)."""
     if _db_error is not None:
@@ -433,14 +446,14 @@ def _render_db_unavailable() -> None:
         st.exception(_db_error)
     elif not _years or not _months:
         st.warning("Não há dados disponíveis.")
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Validação dos filtros obrigatórios
 # ---------------------------------------------------------------------------
 selected_years_tuple = tuple(sorted(selected_years))
 selected_months_tuple = tuple(sorted(selected_months, key=month_to_num))
- 
+
 # ── A) Raw Data ──────────────────────────────────────────────────────────────
 with tab_raw:
     if not _using_fallback and (_db_error is not None or not _years):
@@ -465,7 +478,7 @@ with tab_raw:
                 selected_ufs,
                 selected_municipios,
             )
- 
+
         if df.empty:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
@@ -473,7 +486,7 @@ with tab_raw:
             current_year = max(selected_years_tuple)
             current_month = max(selected_months_tuple, key=month_to_num)
             prev_period = previous_period(current_year, current_month)
- 
+
             if _using_fallback:
                 current_qtd, current_vl = get_fallback_period_totals(
                     current_year, current_month, selected_municipios
@@ -506,13 +519,13 @@ with tab_raw:
                 else:
                     prev_qtd, prev_vl = 0.0, 0.0
                     delta_caption = "Delta indisponível: não há período anterior válido para o recorte atual."
- 
+
             kpi_total_qtd = float(df["total_qtd"].sum())
             kpi_total_vl = float(df["total_vl"].sum())
             kpi_ticket_medio = calculate_average_ticket(kpi_total_vl, kpi_total_qtd)
             current_ticket_medio = calculate_average_ticket(current_vl, current_qtd)
             prev_ticket = calculate_average_ticket(prev_vl, prev_qtd)
- 
+
             kpi1, kpi2, kpi3 = st.columns(3)
             kpi1.metric(
                 "Total de Procedimentos",
@@ -529,7 +542,7 @@ with tab_raw:
                 format_currency(kpi_ticket_medio),
                 delta=format_delta(current_ticket_medio, prev_ticket),
             )
- 
+
             st.subheader("Dados consolidados após filtros")
             _df_display = df.copy()
             _df_display["_mes_num"] = _df_display["mes"].apply(month_to_num)
@@ -543,7 +556,7 @@ with tab_raw:
                 _decimals = 2 if (_col.startswith("vl_") or _col == "total_vl") else 0
                 _df_display_fmt[_col] = _df_display_fmt[_col].apply(br_format, decimals=_decimals)
             st.dataframe(_df_display_fmt, use_container_width=True)
- 
+
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False)
             st.download_button(
@@ -552,7 +565,7 @@ with tab_raw:
                 file_name="aih_filtrado.csv",
                 mime="text/csv",
             )
- 
+
             # ── Dicionário de variáveis ────────────────────────────────────
             st.subheader("Dicionário de Variáveis")
             _meta_rows = [
@@ -564,7 +577,7 @@ with tab_raw:
             _meta_ctrl = [r for r in _meta_rows if not r["Variável"].startswith(("qtd_", "vl_"))]
             _meta_qtd = [r for r in _meta_rows if r["Variável"].startswith("qtd_")]
             _meta_vl = [r for r in _meta_rows if r["Variável"].startswith("vl_")]
- 
+
             st.caption("**Colunas de controle e metadados** (comuns às duas matrizes)")
             st.dataframe(
                 pd.DataFrame(_meta_ctrl),
@@ -583,7 +596,7 @@ with tab_raw:
                 use_container_width=True,
                 hide_index=True,
             )
- 
+
 # ── B) Estatísticas Descritivas ───────────────────────────────────────────────
 with tab_kpis:
     if not _using_fallback and (_db_error is not None or not _years):
@@ -607,30 +620,26 @@ with tab_kpis:
                 selected_ufs,
                 selected_municipios,
             )
- 
+
         if df_stats.empty:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
             st.subheader("Resumo Estatístico")
- 
-            # Lógica de colunas corrigida anteriormente
+
             if _using_fallback:
                 qtd_proc_cols, vl_proc_cols = get_fallback_procedure_columns()
             else:
-                all_cols_raw = get_procedure_columns("aih_qtd")
-                # get_procedure_columns já retorna os nomes completos (ex: "qtd_0406");
-                # basta separar por prefixo — não filtrar por isdigit() nem remontá-los.
-                qtd_proc_cols = [c for c in all_cols_raw if c.startswith("qtd_")]
-                all_vl_raw = get_procedure_columns("aih_vl")
-                vl_proc_cols = [c for c in all_vl_raw if c.startswith("vl_")]
- 
+                # Os nomes reais já vêm como "qtd_0406"; basta filtrar pelo prefixo.
+                qtd_proc_cols = [c for c in get_procedure_columns("aih_qtd") if c.startswith("qtd_")]
+                vl_proc_cols  = [c for c in get_procedure_columns("aih_vl")  if c.startswith("vl_")]
+
             # Filtra apenas colunas que realmente existem no dataframe
             all_metric_cols = (
                 ["total_qtd", "total_vl"]
                 + [c for c in qtd_proc_cols if c in df_stats.columns]
                 + [c for c in vl_proc_cols if c in df_stats.columns]
             )
- 
+
             # Cálculo das estatísticas
             stats_df = df_stats[all_metric_cols].apply(pd.to_numeric, errors="coerce")
             
@@ -643,7 +652,7 @@ with tab_kpis:
             
             _stats_display = _base.join(_extra).map(lambda v: br_format(v, 2))
             st.dataframe(_stats_display, width="stretch") # Substituído use_container_width
- 
+
             st.markdown("**Indicadores de referência do recorte atual:**")
             if _using_fallback:
                 c1, c2 = st.columns(2)
@@ -655,7 +664,7 @@ with tab_kpis:
                 # Municípios: Tenta cod_municipio, se não existir usa a primeira coluna disponível
                 mun_col = 'cod_municipio' if 'cod_municipio' in df_stats.columns else df_stats.columns[0]
                 c1.write(f"- Municípios: **{df_stats[mun_col].nunique()}**")
- 
+
                 # UFs: Proteção contra o KeyError 'uf_nome'
                 if 'uf_nome' in df_stats.columns:
                     c2.write(f"- UFs no recorte: **{df_stats['uf_nome'].nunique()}**")
@@ -663,7 +672,7 @@ with tab_kpis:
                     c2.write(f"- UFs no recorte: **{df_stats['uf_codigo'].nunique()}**")
                 else:
                     c2.write("- UFs no recorte: **N/A**")
- 
+
                 # Períodos
                 if 'ano' in df_stats.columns and 'mes' in df_stats.columns:
                     periodos = df_stats[['ano', 'mes']].drop_duplicates().shape[0]
@@ -674,7 +683,7 @@ with tab_kpis:
             st.caption(
                 "ℹ️ A coluna **count** na tabela acima indica o número de registros (linhas) que compõem o grupo."
             )
- 
+
 # ── Gráficos Analíticos ────────────────────────────────────────────────────
 with tab_charts:
     if not _using_fallback and (_db_error is not None or not _years):
@@ -712,24 +721,21 @@ with tab_charts:
                 selected_ufs,
                 (),
             )
- 
+
         if df_charts.empty:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
             df = df_charts           # Dados filtrados por município
             df_all = df_charts_all   # Dados globais (UF ou Geral)
- 
+
             # --- BUSCA DINÂMICA DE COLUNAS ---
             if _using_fallback:
                 qtd_proc_cols, vl_proc_cols = get_fallback_procedure_columns()
             else:
-                all_cols_raw = get_procedure_columns("aih_qtd")
-                # get_procedure_columns já retorna os nomes completos (ex: "qtd_0406");
-                # basta separar por prefixo — não filtrar por isdigit() nem remontá-los.
-                qtd_proc_cols = [c for c in all_cols_raw if c.startswith("qtd_")]
-                all_vl_raw = get_procedure_columns("aih_vl")
-                vl_proc_cols = [c for c in all_vl_raw if c.startswith("vl_")]
- 
+                # Os nomes reais já vêm como "qtd_0406"; basta filtrar pelo prefixo.
+                qtd_proc_cols = [c for c in get_procedure_columns("aih_qtd") if c.startswith("qtd_")]
+                vl_proc_cols  = [c for c in get_procedure_columns("aih_vl")  if c.startswith("vl_")]
+
             # Filtra apenas o que existe no DataFrame para evitar erros nos Selectboxes
             avail_qtd_cols = ["total_qtd"] + [c for c in qtd_proc_cols if c in df_all.columns]
             avail_vl_cols = ["total_vl"] + [c for c in vl_proc_cols if c in df_all.columns]
@@ -765,7 +771,7 @@ with tab_charts:
             series["periodo"] = pd.to_datetime(
                 series["ano"].astype(str) + "-" + series["_mes_num"].astype(str).str.zfill(2) + "-01"
             )
- 
+
             fig_line = go.Figure()
             fig_line.add_trace(
                 go.Scatter(
@@ -801,7 +807,7 @@ with tab_charts:
             # --- CORREÇÃO DE PROTEÇÃO CONTRA KEYERROR 'uf_nome' ---
             # Verifica se temos a coluna de UF disponível no DataFrame atual
             has_uf_col = "uf_nome" in df_all.columns
- 
+
             if _using_fallback:
                 rank_level = "Município"
                 st.caption("ℹ️ Dados locais não possuem informação de UF. Ranking disponível apenas por Município.")
@@ -810,7 +816,7 @@ with tab_charts:
                 st.caption("ℹ️ A informação de UF não foi retornada pelo banco. Ranking disponível apenas por Município.")
             else:
                 rank_level = st.radio("Nível do ranking", ["Município", "UF"], horizontal=True)
- 
+
             all_rank_cols = avail_qtd_cols + [c for c in avail_vl_cols if c not in avail_qtd_cols]
             rank_metric = st.selectbox(
                 "Métrica",
@@ -818,7 +824,7 @@ with tab_charts:
                 format_func=col_label,
                 key="rank_metric",
             )
- 
+
             # Lógica de agrupamento com fallback de segurança para cat_col
             if rank_level == "UF" and has_uf_col:
                 cat_col = "uf_nome"
@@ -828,7 +834,7 @@ with tab_charts:
                     cat_col = "municipio_nome"
                 else:
                     cat_col = df_all.columns[0]
- 
+
             # Executa o agrupamento de forma segura
             ranking = (
                 df_all.groupby(cat_col, as_index=False)[rank_metric]
@@ -836,7 +842,7 @@ with tab_charts:
                 .sort_values(rank_metric, ascending=False)
                 .head(10)
             )
- 
+
             fig_rank = px.bar(
                 ranking,
                 x=cat_col,
@@ -846,7 +852,7 @@ with tab_charts:
             )
             fig_rank.update_layout(xaxis_tickangle=-40)
             st.plotly_chart(fig_rank, width="stretch") # Corrigido use_container_width
- 
+
 # 3. Scatter Plot
             st.subheader("3) Scatter Plot")
             st.caption("ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município.")
@@ -872,7 +878,7 @@ with tab_charts:
                     horizontal=True,
                     key="corr_method",
                 )
- 
+
             # --- LÓGICA DE AGRUPAMENTO DINÂMICA (CORREÇÃO DE KEYERROR) ---
             # Define colunas de agrupamento seguras
             group_cols = []
@@ -895,7 +901,7 @@ with tab_charts:
                 .sum()
                 .sort_values(scatter_y, ascending=False)
             )
- 
+
             # Criação do gráfico
             fig_scatter = px.scatter(
                 scatter_df,
@@ -905,7 +911,7 @@ with tab_charts:
             )
             
             st.plotly_chart(fig_scatter, width="stretch")
- 
+
             # Cálculo da Correlação
             _CORR_METHOD_MAP = {"Pearson": "pearson", "Spearman": "spearman"}
             _cm = _CORR_METHOD_MAP[corr_method]
@@ -917,25 +923,25 @@ with tab_charts:
                 _corr_val = _s1.corr(_s2)
             else:
                 _corr_val = scatter_df[scatter_x].corr(scatter_df[scatter_y])
- 
+
             if pd.notna(_corr_val):
                 st.caption(
                     f"Correlação de {corr_method} entre {col_label(scatter_x)} e "
                     f"{col_label(scatter_y)}: **{_corr_val:.3f}**"
                 )
- 
+
             st.markdown(
                 """
                 **Pearson**: mede a correlação linear entre duas variáveis contínuas. 
                 Assume distribuição normal e é sensível a outliers. 
                 Ideal quando a relação esperada é linear e os dados não têm desvios extremos.
- 
+
                 **Spearman**: mede a correlação entre as *ordens (ranks)* das variáveis, 
                 sendo não-paramétrico e robusto a outliers. 
                 Recomendado quando os dados têm distribuição assimétrica ou relação monotônica não-linear.
                 """
             )
- 
+
             # 4. Treemap — Distribuição por categorias de procedimento
             st.subheader("4) Treemap — Distribuição por categorias de procedimento")
             treemap_mode = st.selectbox(
@@ -943,10 +949,10 @@ with tab_charts:
                 options=["Quantidade (qtd_*)", "Valor (vl_*)"],
                 key="treemap_mode",
             )
- 
+
             candidate_cols = qtd_proc_cols if treemap_mode.startswith("Quantidade") else vl_proc_cols
             available_cols = [col for col in candidate_cols if col in df.columns]
- 
+
             if available_cols:
                 treemap_selected = st.multiselect(
                     "Colunas a incluir (colunas removidas são agrupadas em 'Outros')",
@@ -991,7 +997,7 @@ with tab_charts:
                     st.info("Selecione ao menos uma coluna para exibir o treemap.")
             else:
                 st.info("Não foram encontradas colunas de categorias de procedimento no recorte atual.")
- 
+
             # 5. Heatmap Sazonal
             st.subheader("5) Heatmap Sazonal")
             st.caption(
@@ -1000,7 +1006,7 @@ with tab_charts:
             )
             _MONTH_ABBR_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
                                "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
- 
+
             hm_c1, hm_c2 = st.columns(2)
             with hm_c1:
                 hm_metric = st.selectbox(
@@ -1019,19 +1025,19 @@ with tab_charts:
                     horizontal=True,
                     key="hm_y_axis",
                 )
- 
+
             _hm_df = df_all.copy()
             _hm_df["_mes_num"] = _hm_df["mes"].apply(month_to_num)
             _hm_df = _hm_df[_hm_df["_mes_num"] > 0].copy()
             _hm_df["_mes_abbr"] = _hm_df["_mes_num"].apply(
                 lambda n: _MONTH_ABBR_PT[n - 1] if 1 <= n <= 12 else str(n)
             )
- 
+
             if hm_y_axis == "UF" and not _using_fallback:
                 _hm_group_col = "uf_nome"
             else:
                 _hm_group_col = "ano"
- 
+
             _hm_pivot = (
                 _hm_df.groupby([_hm_group_col, "_mes_num", "_mes_abbr"], as_index=False)[hm_metric]
                 .sum()
@@ -1040,7 +1046,7 @@ with tab_charts:
             # Ensure full 12-column month order; fill missing months with 0
             _hm_pivot = _hm_pivot.reindex(columns=range(1, 13), fill_value=0)
             _hm_pivot.columns = _MONTH_ABBR_PT
- 
+
             _hm_z_fmt = [[br_format(v) for v in row] for row in _hm_pivot.values]
             fig_heatmap = go.Figure(
                 go.Heatmap(
@@ -1059,6 +1065,3 @@ with tab_charts:
                 margin=dict(l=10, r=10, t=20, b=10),
             )
             st.plotly_chart(fig_heatmap, use_container_width=True)
- 
- 
- 
