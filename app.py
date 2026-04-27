@@ -28,6 +28,7 @@ from db import (
     load_consolidated_data,
     load_filter_options,
     load_municipality_options,
+    load_scatter_data,
     month_to_num,
     previous_period,
 )
@@ -902,37 +903,39 @@ with tab_charts:
                     key="corr_method",
                 )
 
-            # --- LÓGICA DE AGRUPAMENTO DINÂMICA (CORREÇÃO DE KEYERROR) ---
-            # Garante que scatter_x e scatter_y existem no df_all antes de qualquer
-            # operação. O session_state do Streamlit pode conter um valor de
-            # reexecução anterior que não está mais disponível (ex.: ao trocar o
-            # radio de correlação com filtros diferentes ativos).
-            if scatter_x not in df_all.columns:
-                scatter_x = "total_qtd" if "total_qtd" in df_all.columns else df_all.columns[0]
-            if scatter_y not in df_all.columns:
-                scatter_y = "total_vl" if "total_vl" in df_all.columns else df_all.columns[0]
+            # --- SCATTER DATA: agrega no banco (modo DB) ou em memória (fallback) ---
+            # No modo DB, load_scatter_data faz o GROUP BY diretamente no PostgreSQL,
+            # retornando uma linha por município — sem transferir dados brutos por período.
+            # Isso elimina o crash por OOM que ocorria ao selecionar todas as UFs.
+            if not _using_fallback:
+                scatter_df = load_scatter_data(
+                    selected_years_tuple,
+                    selected_months_tuple,
+                    selected_ufs,
+                )
+            else:
+                # Fallback: df_all já está em memória; groupby local é suficiente
+                # pois os Parquets locais são pequenos.
+                _scatter_group = []
+                if 'cod_municipio'  in df_all.columns: _scatter_group.append('cod_municipio')
+                if 'municipio_nome' in df_all.columns: _scatter_group.append('municipio_nome')
+                scatter_df = (
+                    df_all.groupby(_scatter_group, as_index=False)
+                    [["total_qtd", "total_vl"]]
+                    .sum()
+                )
 
-            # Define colunas de agrupamento seguras
-            group_cols = []
-            if 'cod_municipio' in df_all.columns:
-                group_cols.append('cod_municipio')
-            if 'municipio_nome' in df_all.columns:
-                group_cols.append('municipio_nome')
+            # Garante que scatter_x/scatter_y existem no scatter_df
+            if scatter_x not in scatter_df.columns:
+                scatter_x = "total_qtd" if "total_qtd" in scatter_df.columns else scatter_df.columns[0]
+            if scatter_y not in scatter_df.columns:
+                scatter_y = "total_vl" if "total_vl" in scatter_df.columns else scatter_df.columns[0]
 
-            # Tenta incluir UF para o detalhamento (hover), mas protege contra ausência
-            hover_fields = ["municipio_nome"] if "municipio_nome" in df_all.columns else []
-            if 'uf_nome' in df_all.columns:
-                group_cols.append('uf_nome')
-                hover_fields.append('uf_nome')
-            elif 'uf_codigo' in df_all.columns:
-                group_cols.append('uf_codigo')
+            scatter_df = scatter_df.sort_values(scatter_y, ascending=False)
 
-            # Executa o agrupamento — colunas de métrica validadas acima
-            scatter_df = (
-                df_all.groupby(group_cols, as_index=False)[[scatter_x, scatter_y]]
-                .sum()
-                .sort_values(scatter_y, ascending=False)
-            )
+            hover_fields = ["municipio_nome"] if "municipio_nome" in scatter_df.columns else []
+            if "uf_nome" in scatter_df.columns:
+                hover_fields.append("uf_nome")
 
             # Criação do gráfico
             fig_scatter = px.scatter(
@@ -941,29 +944,15 @@ with tab_charts:
                 hover_data=hover_fields,
                 labels={scatter_x: col_label(scatter_x), scatter_y: col_label(scatter_y)},
             )
-            
             st.plotly_chart(fig_scatter, width="stretch")
 
             # Cálculo da Correlação
-            # Força coerção numérica para evitar TypeError no pandas 3.x quando
-            # colunas têm dtype object ou contêm NA residual.
+            # scatter_df já tem uma linha por município — Pearson é trivial aqui.
             _CORR_METHOD_MAP = {"Pearson": "pearson", "Spearman": "spearman"}
             _cm = _CORR_METHOD_MAP[corr_method]
 
-            # Limita a amostra para o cálculo de correlação (evita crash por OOM
-            # ao selecionar todas as UFs com Pearson em datasets muito grandes).
-            _CORR_SAMPLE_LIMIT = 5_000
-            _corr_source = scatter_df
-            if len(scatter_df) > _CORR_SAMPLE_LIMIT:
-                _corr_source = scatter_df.sample(n=_CORR_SAMPLE_LIMIT, random_state=42)
-                st.caption(
-                    f"⚠️ Amostra de {_CORR_SAMPLE_LIMIT:,} pontos usada para o cálculo de correlação "
-                    f"(dataset completo tem {len(scatter_df):,} linhas)."
-                )
-
-            _x_series = pd.to_numeric(_corr_source[scatter_x], errors="coerce").dropna()
-            _y_series = pd.to_numeric(_corr_source[scatter_y], errors="coerce").dropna()
-            # Alinha os índices após dropna para garantir mesmo tamanho
+            _x_series = pd.to_numeric(scatter_df[scatter_x], errors="coerce").dropna()
+            _y_series = pd.to_numeric(scatter_df[scatter_y], errors="coerce").dropna()
             _common_idx = _x_series.index.intersection(_y_series.index)
             _x_series = _x_series.loc[_common_idx]
             _y_series = _y_series.loc[_common_idx]
