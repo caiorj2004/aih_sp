@@ -187,18 +187,62 @@ def get_dimension_mapping() -> Dict[str, str]:
 @st.cache_data(ttl=3600)
 def get_procedure_columns(table_name: str = "aih_qtd") -> List[str]:
     """
-    Retorna a lista de nomes de colunas da tabela especificada, 
+    Retorna a lista de nomes de colunas da tabela especificada,
     ajudando a identificar quais são códigos de procedimentos.
     """
     try:
         conn = get_connection()
-        # Query para listar colunas no PostgreSQL
-        query = text(f"SELECT column_name FROM information_schema.columns WHERE table_name = :table")
+        query = text("SELECT column_name FROM information_schema.columns WHERE table_name = :table")
         result = conn.query(query, params={"table": table_name})
         return result["column_name"].tolist()
     except Exception:
-        # Fallback caso a query falhe: retorna lista vazia
         return []
+
+
+# ---------------------------------------------------------------------------
+# Listas canônicas de colunas de procedimento — espelho exato do schema do banco
+# ---------------------------------------------------------------------------
+# Geradas a partir da inspeção direta das tabelas aih_qtd e aih_vl no PostgreSQL.
+# Qualquer divergência entre estas listas e o banco causará UndefinedColumn.
+# Se novas colunas forem adicionadas ao banco, inclua-as aqui também.
+
+# aih_qtd: todas as colunas qtd_* existentes (qtd_0417 ausente — só existe em aih_vl)
+_QTD_PROC_COLS: List[str] = [
+    "qtd_0101",
+    "qtd_0201", "qtd_0202", "qtd_0203", "qtd_0204", "qtd_0205",
+    "qtd_0206", "qtd_0207", "qtd_0208", "qtd_0209", "qtd_0210",
+    "qtd_0211", "qtd_0212", "qtd_0213", "qtd_0214",
+    "qtd_0301", "qtd_0302", "qtd_0303", "qtd_0304", "qtd_0305",
+    "qtd_0306", "qtd_0307", "qtd_0308", "qtd_0309", "qtd_0310", "qtd_0311",
+    "qtd_0401", "qtd_0402", "qtd_0403", "qtd_0404", "qtd_0405",
+    "qtd_0406", "qtd_0407", "qtd_0408", "qtd_0409", "qtd_0410",
+    "qtd_0411", "qtd_0412", "qtd_0413", "qtd_0414", "qtd_0415",
+    "qtd_0416", "qtd_0418",
+    "qtd_0501", "qtd_0502", "qtd_0503", "qtd_0504", "qtd_0505", "qtd_0506",
+    "qtd_0603",
+    "qtd_0702",
+    "qtd_0801", "qtd_0802",
+]
+
+# aih_vl: todas as colunas vl_* existentes
+# Diferenças em relação a aih_qtd:
+#   ausentes em aih_vl: vl_0101, vl_0213, vl_0311
+#   exclusiva de aih_vl: vl_0417 (Anestesiologia)
+_VL_PROC_COLS: List[str] = [
+    "vl_0201", "vl_0202", "vl_0203", "vl_0204", "vl_0205",
+    "vl_0206", "vl_0207", "vl_0208", "vl_0209", "vl_0210",
+    "vl_0211", "vl_0212", "vl_0214",
+    "vl_0301", "vl_0302", "vl_0303", "vl_0304", "vl_0305",
+    "vl_0306", "vl_0307", "vl_0308", "vl_0309", "vl_0310",
+    "vl_0401", "vl_0402", "vl_0403", "vl_0404", "vl_0405",
+    "vl_0406", "vl_0407", "vl_0408", "vl_0409", "vl_0410",
+    "vl_0411", "vl_0412", "vl_0413", "vl_0414", "vl_0415",
+    "vl_0416", "vl_0417", "vl_0418",
+    "vl_0501", "vl_0502", "vl_0503", "vl_0504", "vl_0505", "vl_0506",
+    "vl_0603",
+    "vl_0702",
+    "vl_0801", "vl_0802",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +358,7 @@ def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
     conn = get_connection()
     mapping = get_dimension_mapping()
     params = {}
-    
+
     # Se não houver UF selecionada, retorna vazio para evitar erro de SQL
     if not selected_ufs:
         return pd.DataFrame(columns=["cod_municipio", "municipio_nome", "uf_codigo"])
@@ -331,8 +375,8 @@ def load_municipality_options(selected_ufs: Tuple[str, ...]) -> pd.DataFrame:
         {uf_filter}
         ORDER BY municipio_nome, cod_municipio
     """
-    # O Streamlit converterá o dict 'params' para os binds :uf_0, :uf_1, etc.
     return conn.query(query, params=params)
+
 
 @st.cache_data(ttl=900)
 def load_consolidated_data(
@@ -341,61 +385,74 @@ def load_consolidated_data(
     selected_ufs: Tuple[str, ...],
     selected_municipios: Tuple[str, ...],
 ) -> pd.DataFrame:
+    """
+    Consulta consolidada entre aih_qtd e aih_vl.
+
+    As colunas de procedimento são descobertas dinamicamente via
+    _get_proc_col_mapping(), tornando a query resiliente a variações no nome
+    das colunas no banco (com ou sem prefixo qtd_/vl_).
+
+    Para cada coluna descoberta é gerado:
+        CAST(alias."col_real" AS FLOAT8) AS "alias_canonico"
+    onde alias_canonico tem sempre o prefixo qtd_/vl_ esperado pelo app.py.
+    """
     try:
         conn = get_connection()
         mapping = get_dimension_mapping()
 
-        # Listas fixas confirmadas pelo dicionário de dados.
-        # qtd_0417 (Anestesiologia) NÃO existe em aih_qtd — apenas em aih_vl.
-        _QTD_PROC_COLS = [
-            "qtd_0101","qtd_0201","qtd_0202","qtd_0203","qtd_0204","qtd_0205",
-            "qtd_0206","qtd_0207","qtd_0208","qtd_0209","qtd_0210","qtd_0211",
-            "qtd_0212","qtd_0213","qtd_0214","qtd_0301","qtd_0302","qtd_0303",
-            "qtd_0304","qtd_0305","qtd_0306","qtd_0307","qtd_0308","qtd_0309",
-            "qtd_0310","qtd_0311","qtd_0401","qtd_0402","qtd_0403","qtd_0404",
-            "qtd_0405","qtd_0406","qtd_0407","qtd_0408","qtd_0409","qtd_0410",
-            "qtd_0411","qtd_0412","qtd_0413","qtd_0414","qtd_0415","qtd_0416",
-            "qtd_0418","qtd_0501","qtd_0502","qtd_0503","qtd_0504",
-            "qtd_0505","qtd_0506","qtd_0603","qtd_0702","qtd_0801","qtd_0802",
-        ]
-        _VL_PROC_COLS = [
-            "vl_0101","vl_0201","vl_0202","vl_0203","vl_0204","vl_0205",
-            "vl_0206","vl_0207","vl_0208","vl_0209","vl_0210","vl_0211",
-            "vl_0212","vl_0213","vl_0214","vl_0301","vl_0302","vl_0303",
-            "vl_0304","vl_0305","vl_0306","vl_0307","vl_0308","vl_0309",
-            "vl_0310","vl_0311","vl_0401","vl_0402","vl_0403","vl_0404",
-            "vl_0405","vl_0406","vl_0407","vl_0408","vl_0409","vl_0410",
-            "vl_0411","vl_0412","vl_0413","vl_0414","vl_0415","vl_0416",
-            "vl_0417","vl_0418","vl_0501","vl_0502","vl_0503","vl_0504",
-            "vl_0505","vl_0506","vl_0603","vl_0702","vl_0801","vl_0802",
-        ]
-        qtd_selection = ", ".join([f'CAST(q."{c}" AS FLOAT8) AS "{c}"' for c in _QTD_PROC_COLS])
-        vl_selection  = ", ".join([f'CAST(v."{c}" AS FLOAT8) AS "{c}"' for c in _VL_PROC_COLS])
-        proc_selection = f"{qtd_selection}, {vl_selection}"
+        # Monta os trechos de SELECT usando as listas canônicas.
+        # Cada coluna é verificada contra o schema real do banco antes de incluir
+        # no SELECT, evitando UndefinedColumn se o banco divergir das listas.
+        real_qtd_cols = set(get_table_columns("aih_qtd"))
+        real_vl_cols  = set(get_table_columns("aih_vl"))
 
-        params = {}
-        y_clause = _build_in_clause("q.ano", selected_years, "yr", params)
+        qtd_selection = ", ".join(
+            f'CAST(q."{c}" AS FLOAT8) AS "{c}"'
+            for c in _QTD_PROC_COLS
+            if c in real_qtd_cols
+        )
+        vl_selection = ", ".join(
+            f'CAST(v."{c}" AS FLOAT8) AS "{c}"'
+            for c in _VL_PROC_COLS
+            if c in real_vl_cols
+        )
+
+        proc_parts = [p for p in (qtd_selection, vl_selection) if p]
+        proc_clause = (", " + ", ".join(proc_parts)) if proc_parts else ""
+
+        params: Dict[str, str] = {}
+        y_clause = _build_in_clause("q.ano", selected_years,  "yr", params)
         m_clause = _build_in_clause("q.mes", selected_months, "mo", params)
 
         uf_clause = ""
         if selected_ufs:
             uf_clause = _build_in_clause("m.uf_codigo", selected_ufs, "uf", params)
 
-        mc = mapping['municipio_code_col']
-        mn = mapping['municipio_name_col']
+        mun_clause = ""
+        if selected_municipios:
+            mun_clause = _build_in_clause(
+                "q.cod_municipio", selected_municipios, "mun", params
+            )
+
+        mc = mapping["municipio_code_col"]
+        mn = mapping["municipio_name_col"]
+
         query = (
             f"WITH filtered_mun AS ("
-            f"  SELECT {mc} as cod_mun, {mn} as nome_mun"
+            f"  SELECT {mc} AS cod_mun, {mn} AS nome_mun"
             f"  FROM municipios_ibge m WHERE 1=1 {uf_clause}"
             f") "
-            f"SELECT q.ano, q.mes, q.cod_municipio, f.nome_mun AS municipio_nome,"
-            f" CAST(q.total AS FLOAT8) AS total_qtd,"
-            f" CAST(v.total AS FLOAT8) AS total_vl,"
-            f" {proc_selection}"
+            f"SELECT q.ano, q.mes, q.cod_municipio,"
+            f"  f.nome_mun AS municipio_nome,"
+            f"  CAST(q.total AS FLOAT8) AS total_qtd,"
+            f"  CAST(v.total AS FLOAT8) AS total_vl"
+            f"{proc_clause}"
             f" FROM aih_qtd q"
-            f" INNER JOIN aih_vl v ON v.ano=q.ano AND v.mes=q.mes AND v.cod_municipio=q.cod_municipio"
-            f" INNER JOIN filtered_mun f ON f.cod_mun=q.cod_municipio"
-            f" WHERE 1=1 {y_clause} {m_clause}"
+            f" INNER JOIN aih_vl v"
+            f"   ON v.ano = q.ano AND v.mes = q.mes"
+            f"   AND v.cod_municipio = q.cod_municipio"
+            f" INNER JOIN filtered_mun f ON f.cod_mun = q.cod_municipio"
+            f" WHERE 1=1 {y_clause} {m_clause} {mun_clause}"
         )
 
         df = conn.query(query, params=params)
@@ -404,6 +461,7 @@ def load_consolidated_data(
     except Exception as e:
         st.cache_resource.clear()
         raise e
+
 
 @st.cache_data(ttl=900)
 def get_period_totals(
@@ -431,8 +489,8 @@ def get_period_totals(
             COALESCE(SUM(v.total), 0) AS total_vl
         FROM aih_qtd q
         JOIN aih_vl v
-            ON  v.ano          = q.ano
-            AND v.mes          = q.mes
+            ON  v.ano           = q.ano
+            AND v.mes           = q.mes
             AND v.cod_municipio = q.cod_municipio
         JOIN municipios_ibge m ON m.{mapping['municipio_code_col']} = q.cod_municipio
         WHERE TRIM(q.ano) = :year
