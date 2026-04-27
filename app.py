@@ -590,34 +590,41 @@ with tab_kpis:
     elif _using_fallback and not selected_municipios:
         st.warning("Selecione ao menos um **município** na barra lateral para continuar.")
     else:
-        # ... (carregamento do df_stats permanece igual)
+        # AQUI ESTAVA O ERRO: A definição da variável df_stats
+        if _using_fallback:
+            df_stats = load_fallback_consolidated(
+                selected_years_tuple, selected_months_tuple, selected_municipios
+            )
+        else:
+            df_stats = load_consolidated_data(
+                selected_years_tuple,
+                selected_months_tuple,
+                selected_ufs,
+                selected_municipios,
+            )
+
         if df_stats.empty:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
         else:
             st.subheader("Resumo Estatístico")
 
-            # --- INÍCIO DO TRECHO CORRIGIDO ---
+            # Lógica de colunas corrigida anteriormente
             if _using_fallback:
-                # O fallback já retorna as duas listas prontas
                 qtd_proc_cols, vl_proc_cols = get_fallback_procedure_columns()
             else:
-                # 1. Busca os códigos brutos do banco
                 all_cols_raw = get_procedure_columns("aih_qtd")
                 proc_codes = [c for c in all_cols_raw if c.isdigit()]
-                
-                # 2. Reconstrói as colunas com os prefixos 'q_' e 'v_' usados no DataFrame
                 qtd_proc_cols = [f"q_{c}" for c in proc_codes]
                 vl_proc_cols = [f"v_{c}" for c in proc_codes]
 
-            # 3. Consolida a lista de colunas que realmente existem no DataFrame filtrado
+            # Filtra apenas colunas que realmente existem no dataframe
             all_metric_cols = (
                 ["total_qtd", "total_vl"]
                 + [c for c in qtd_proc_cols if c in df_stats.columns]
                 + [c for c in vl_proc_cols if c in df_stats.columns]
             )
-            # --- FIM DO TRECHO CORRIGIDO ---
 
-            # Converte para numérico para garantir que o describe() funcione
+            # Cálculo das estatísticas
             stats_df = df_stats[all_metric_cols].apply(pd.to_numeric, errors="coerce")
             
             _base = stats_df.describe().T
@@ -625,9 +632,10 @@ with tab_kpis:
                 "variance": stats_df.var(numeric_only=True),
                 "skewness": stats_df.skew(numeric_only=True),
                 "kurtosis": stats_df.kurt(numeric_only=True),
-            })
+            }, index=stats_df.columns)
+            
             _stats_display = _base.join(_extra).map(lambda v: br_format(v, 2))
-            st.dataframe(_stats_display, use_container_width=True)
+            st.dataframe(_stats_display, width="stretch") # Substituído use_container_width
 
             st.markdown("**Indicadores de referência do recorte atual:**")
             if _using_fallback:
