@@ -14,7 +14,7 @@ de colunas de UF.
 """
 
 import io
-from typing import Optional
+from typing import Optional, Tuple
 
 import pandas as pd
 import plotly.express as px
@@ -281,9 +281,18 @@ with tab_intro:
 # ---------------------------------------------------------------------------
 _db_error: Optional[Exception] = None
 
-# Respect the user's local-mode toggle from the previous run so we never
-# attempt a DB connection when the user explicitly chose the Parquet mode.
-_force_local: bool = st.session_state.get("use_local", False)
+# Detect mode changes so we can clear stale widget state before rendering.
+_curr_use_local: bool = st.session_state.get("use_local", False)
+_prev_use_local: Optional[bool] = st.session_state.get("_prev_use_local", None)
+if _prev_use_local is not None and _prev_use_local != _curr_use_local:
+    # Mode switched: remove any session_state keys belonging to the old form
+    # to avoid "submitted value no longer in options" KeyErrors.
+    for _k in list(st.session_state.keys()):
+        if _k.startswith("sidebar_filters_") or _k in ("_submitted_ufs",):
+            del st.session_state[_k]
+st.session_state["_prev_use_local"] = _curr_use_local
+
+_force_local: bool = _curr_use_local
 _using_fallback: bool = _force_local
 
 _years: list = []
@@ -374,6 +383,7 @@ with st.sidebar:
             for row in _uf_options.itertuples(index=False)
         }
 
+        # ── Form: year, month, UF selectors ─────────────────────────────────
         with st.form("sidebar_filters_db"):
             selected_years = st.multiselect("Ano", options=_years, default=_years)
             selected_months = st.multiselect("Mês", options=_months, default=_months)
@@ -382,21 +392,33 @@ with st.sidebar:
                 options=list(uf_label_to_code.keys()),
                 default=list(uf_label_to_code.keys()),
             )
-            # Municipality options are based on the last *submitted* UF selection.
-            # They update after the form is submitted, preventing a DB round-trip
-            # on every individual filter change.
-            _submitted_ufs = tuple(uf_label_to_code[label] for label in selected_uf_labels)
-            municipio_options_df = load_municipality_options(_submitted_ufs)
-            municipio_label_to_code = {
-                f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
-                for row in municipio_options_df.itertuples(index=False)
-            }
-            selected_municipio_labels = st.multiselect(
-                "Município",
-                options=list(municipio_label_to_code.keys()),
-                default=list(municipio_label_to_code.keys()),
-            )
-            st.form_submit_button("🔍 Aplicar Filtros")
+            _form_submitted = st.form_submit_button("🔍 Aplicar Filtros")
+
+        # Persist submitted UF selection so load_municipality_options is only
+        # called on form submission — not on every widget interaction inside
+        # the form.  Avoids a DB round-trip on each keypress / deselect.
+        _submitted_ufs_from_form = tuple(uf_label_to_code[lbl] for lbl in selected_uf_labels)
+        if _form_submitted or "_submitted_ufs" not in st.session_state:
+            st.session_state["_submitted_ufs"] = _submitted_ufs_from_form
+
+        _submitted_ufs: Tuple[str, ...] = st.session_state["_submitted_ufs"]
+
+        # Municipality options loaded once per UF submission (cached)
+        municipio_options_df = load_municipality_options(_submitted_ufs)
+        municipio_label_to_code = {
+            f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
+            for row in municipio_options_df.itertuples(index=False)
+        }
+
+        # Municipality multiselect sits outside the main form so it can update
+        # immediately after UF selection is applied without requiring a second
+        # submit click.
+        selected_municipio_labels = st.multiselect(
+            "Município",
+            options=list(municipio_label_to_code.keys()),
+            default=list(municipio_label_to_code.keys()),
+            key="mun_filter",
+        )
 
         selected_ufs = _submitted_ufs
         selected_municipios = tuple(
