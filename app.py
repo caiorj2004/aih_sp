@@ -146,11 +146,8 @@ def col_label(col: str) -> str:
     return COLUMN_LABELS.get(col, col)
 
 
-# ---------------------------------------------------------------------------
-# Listas fixas de colunas de procedimento (confirmadas pelo dicionário de dados)
-# Usadas no modo online para filtrar colunas do DataFrame — evita dependência
-# de get_procedure_columns() e seu cache que poderia estar desatualizado.
-# ---------------------------------------------------------------------------
+# Listas fixas de colunas de procedimento — mesmas usadas no db.py.
+# qtd_0417 ausente em aih_qtd (existe só em aih_vl).
 _QTD_PROC_COLS = [
     "qtd_0101","qtd_0201","qtd_0202","qtd_0203","qtd_0204","qtd_0205",
     "qtd_0206","qtd_0207","qtd_0208","qtd_0209","qtd_0210","qtd_0211",
@@ -159,7 +156,7 @@ _QTD_PROC_COLS = [
     "qtd_0310","qtd_0311","qtd_0401","qtd_0402","qtd_0403","qtd_0404",
     "qtd_0405","qtd_0406","qtd_0407","qtd_0408","qtd_0409","qtd_0410",
     "qtd_0411","qtd_0412","qtd_0413","qtd_0414","qtd_0415","qtd_0416",
-    "qtd_0417","qtd_0418","qtd_0501","qtd_0502","qtd_0503","qtd_0504",
+    "qtd_0418","qtd_0501","qtd_0502","qtd_0503","qtd_0504",
     "qtd_0505","qtd_0506","qtd_0603","qtd_0702","qtd_0801","qtd_0802",
 ]
 _VL_PROC_COLS = [
@@ -387,22 +384,17 @@ with st.sidebar:
         selected_years = st.multiselect("Ano", options=_years, default=_years)
         selected_months = st.multiselect("Mês", options=_months, default=_months)
         
-        # _fb_municipios é um DataFrame com colunas cod_municipio e municipio_nome.
-        # O multiselect exibe os nomes, mas load_fallback_consolidated filtra por cod_municipio.
+        # _fb_municipios é DataFrame com colunas cod_municipio e municipio_nome.
+        # O multiselect exibe nomes; load_fallback_consolidated filtra por cod_municipio.
         _mun_name_col = next(
-            (c for c in ("municipio_nome", "no_municipio", "municipio", "nome")
-             if c in _fb_municipios.columns),
+            (c for c in ("municipio_nome","no_municipio","municipio","nome") if c in _fb_municipios.columns),
             _fb_municipios.columns[0],
         )
         _mun_code_col = next(
-            (c for c in ("cod_municipio", "codigo_municipio", "codigo")
-             if c in _fb_municipios.columns),
+            (c for c in ("cod_municipio","codigo_municipio","codigo") if c in _fb_municipios.columns),
             _fb_municipios.columns[0],
         )
-        _mun_label_to_code = {
-            row[_mun_name_col]: row[_mun_code_col]
-            for _, row in _fb_municipios.iterrows()
-        }
+        _mun_label_to_code = {row[_mun_name_col]: row[_mun_code_col] for _, row in _fb_municipios.iterrows()}
         municipio_options = sorted(_mun_label_to_code.keys())
         selected_mun_labels = st.multiselect("Município (Opcional)", options=municipio_options, default=[])
         
@@ -652,8 +644,6 @@ with tab_kpis:
         else:
             st.subheader("Resumo Estatístico")
 
-            # Listas de colunas de procedimento — usa constantes fixas no modo online
-            # para não depender de get_procedure_columns() nem de seu cache.
             if _using_fallback:
                 qtd_proc_cols, vl_proc_cols = get_fallback_procedure_columns()
             else:
@@ -755,8 +745,7 @@ with tab_charts:
             df = df_charts           # Dados filtrados por município
             df_all = df_charts_all   # Dados globais (UF ou Geral)
 
-            # --- BUSCA DE COLUNAS DE PROCEDIMENTO ---
-            # Usa constantes fixas no modo online para não depender de cache.
+            # --- COLUNAS DE PROCEDIMENTO ---
             if _using_fallback:
                 qtd_proc_cols, vl_proc_cols = get_fallback_procedure_columns()
             else:
