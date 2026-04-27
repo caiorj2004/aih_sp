@@ -827,7 +827,7 @@ with tab_charts:
             fig_rank.update_layout(xaxis_tickangle=-40)
             st.plotly_chart(fig_rank, use_container_width=True)
 
-            # 3. Scatter Plot
+# 3. Scatter Plot
             st.subheader("3) Scatter Plot")
             st.caption("ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município.")
             sc_c1, sc_c2, sc_c3 = st.columns(3)
@@ -852,53 +852,66 @@ with tab_charts:
                     horizontal=True,
                     key="corr_method",
                 )
-            if _using_fallback:
-                scatter_df = (
-                    df_all.groupby(["cod_municipio", "municipio_nome"], as_index=False)[[scatter_x, scatter_y]]
-                    .sum()
-                    .sort_values(scatter_y, ascending=False)
-                )
-                fig_scatter = px.scatter(
-                    scatter_df,
-                    x=scatter_x, y=scatter_y,
-                    hover_data=["municipio_nome"],
-                    labels={scatter_x: col_label(scatter_x), scatter_y: col_label(scatter_y)},
-                )
-            else:
-                scatter_df = (
-                    df_all.groupby(["cod_municipio", "municipio_nome", "uf_nome"], as_index=False)[[scatter_x, scatter_y]]
-                    .sum()
-                    .sort_values(scatter_y, ascending=False)
-                )
-                fig_scatter = px.scatter(
-                    scatter_df,
-                    x=scatter_x, y=scatter_y,
-                    hover_data=["municipio_nome", "uf_nome"],
-                    labels={scatter_x: col_label(scatter_x), scatter_y: col_label(scatter_y)},
-                )
-            st.plotly_chart(fig_scatter, use_container_width=True)
+
+            # --- LÓGICA DE AGRUPAMENTO DINÂMICA (CORREÇÃO DE KEYERROR) ---
+            # Define colunas de agrupamento seguras
+            group_cols = []
+            if 'cod_municipio' in df_all.columns:
+                group_cols.append('cod_municipio')
+            if 'municipio_nome' in df_all.columns:
+                group_cols.append('municipio_nome')
+            
+            # Tenta incluir UF para o detalhamento (hover), mas protege contra ausência
+            hover_fields = ["municipio_nome"]
+            if 'uf_nome' in df_all.columns:
+                group_cols.append('uf_nome')
+                hover_fields.append('uf_nome')
+            elif 'uf_codigo' in df_all.columns:
+                group_cols.append('uf_codigo')
+            
+            # Executa o agrupamento
+            scatter_df = (
+                df_all.groupby(group_cols, as_index=False)[[scatter_x, scatter_y]]
+                .sum()
+                .sort_values(scatter_y, ascending=False)
+            )
+
+            # Criação do gráfico
+            fig_scatter = px.scatter(
+                scatter_df,
+                x=scatter_x, y=scatter_y,
+                hover_data=hover_fields,
+                labels={scatter_x: col_label(scatter_x), scatter_y: col_label(scatter_y)},
+            )
+            
+            st.plotly_chart(fig_scatter, width="stretch")
+
+            # Cálculo da Correlação
             _CORR_METHOD_MAP = {"Pearson": "pearson", "Spearman": "spearman"}
             _cm = _CORR_METHOD_MAP[corr_method]
+            
             if _cm == "spearman":
-                # Compute Spearman via rank-based Pearson to avoid requiring scipy
+                # Spearman via postos (ranks)
                 _s1 = scatter_df[scatter_x].rank()
                 _s2 = scatter_df[scatter_y].rank()
                 _corr_val = _s1.corr(_s2)
             else:
                 _corr_val = scatter_df[scatter_x].corr(scatter_df[scatter_y])
+
             if pd.notna(_corr_val):
                 st.caption(
                     f"Correlação de {corr_method} entre {col_label(scatter_x)} e "
                     f"{col_label(scatter_y)}: **{_corr_val:.3f}**"
                 )
+
             st.markdown(
                 """
-                **Pearson**: mede a correlação linear entre duas variáveis contínuas.
-                Assume distribuição normal e é sensível a outliers.
+                **Pearson**: mede a correlação linear entre duas variáveis contínuas. 
+                Assume distribuição normal e é sensível a outliers. 
                 Ideal quando a relação esperada é linear e os dados não têm desvios extremos.
 
-                **Spearman**: mede a correlação entre as *ordens (ranks)* das variáveis,
-                sendo não-paramétrico e robusto a outliers.
+                **Spearman**: mede a correlação entre as *ordens (ranks)* das variáveis, 
+                sendo não-paramétrico e robusto a outliers. 
                 Recomendado quando os dados têm distribuição assimétrica ou relação monotônica não-linear.
                 """
             )
