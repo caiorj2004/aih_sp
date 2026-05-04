@@ -757,74 +757,88 @@ with tab_charts:
             avail_qtd_cols = ["total_qtd"] + [c for c in qtd_proc_cols if c in df_all.columns]
             avail_vl_cols = ["total_vl"] + [c for c in vl_proc_cols if c in df_all.columns]
             
-            # 1. Série temporal
-            st.subheader("1) Série temporal")
-            ts_c1, ts_c2 = st.columns(2)
-            with ts_c1:
-                serie_qtd_col = st.selectbox(
-                    "Eixo esquerdo (Quantidade)",
-                    options=avail_qtd_cols,
-                    format_func=col_label,
-                    key="serie_qtd",
-                )
-            with ts_c2:
-                serie_vl_col = st.selectbox(
-                    "Eixo direito (Valor)",
-                    options=avail_vl_cols,
-                    format_func=col_label,
-                    key="serie_vl",
-                )
-            
-            # Preparação dos dados para a série temporal
-            # Valida que as colunas selecionadas existem no df atual
+            # 1. Evolução da quantidade de procedimentos
+            st.subheader("1) Evolução da quantidade de procedimentos")
+            serie_qtd_col = st.selectbox(
+                "Variável de quantidade",
+                options=avail_qtd_cols,
+                format_func=col_label,
+                key="serie_qtd",
+            )
+
+            # Valida que a coluna selecionada existe no df atual
             if serie_qtd_col not in df.columns:
                 serie_qtd_col = "total_qtd" if "total_qtd" in df.columns else df.columns[0]
-            if serie_vl_col not in df.columns:
-                serie_vl_col = "total_vl" if "total_vl" in df.columns else df.columns[0]
 
-            series = (
-                df.groupby(["ano", "mes"], as_index=False)[[serie_qtd_col, serie_vl_col]]
+            series_qtd = (
+                df.groupby(["ano", "mes"], as_index=False)[[serie_qtd_col]]
                 .sum()
             )
-            series["_mes_num"] = series["mes"].apply(month_to_num)
-            series = series[series["_mes_num"] > 0].copy()
-            series = series.sort_values(["ano", "_mes_num"])
-            
-            # Conversão para formato de data para o eixo X
-            series["periodo"] = pd.to_datetime(
-                series["ano"].astype(str) + "-" + series["_mes_num"].astype(str).str.zfill(2) + "-01"
+            series_qtd["_mes_num"] = series_qtd["mes"].apply(month_to_num)
+            series_qtd = series_qtd[series_qtd["_mes_num"] > 0].copy()
+            series_qtd = series_qtd.sort_values(["ano", "_mes_num"])
+            series_qtd["periodo"] = pd.to_datetime(
+                series_qtd["ano"].astype(str) + "-" + series_qtd["_mes_num"].astype(str).str.zfill(2) + "-01"
             )
 
-            fig_line = go.Figure()
-            fig_line.add_trace(
+            fig_qtd = go.Figure()
+            fig_qtd.add_trace(
                 go.Scatter(
-                    x=series["periodo"], 
-                    y=series[serie_qtd_col],
-                    mode="lines+markers", 
-                    name=col_label(serie_qtd_col), 
-                    yaxis="y1"
+                    x=series_qtd["periodo"],
+                    y=series_qtd[serie_qtd_col],
+                    mode="lines+markers",
+                    name=col_label(serie_qtd_col),
                 )
             )
-            fig_line.add_trace(
-                go.Scatter(
-                    x=series["periodo"], 
-                    y=series[serie_vl_col],
-                    mode="lines+markers", 
-                    name=col_label(serie_vl_col), 
-                    yaxis="y2"
-                )
-            )
-            
-            fig_line.update_layout(
+            fig_qtd.update_layout(
                 yaxis=dict(title=col_label(serie_qtd_col)),
-                yaxis2=dict(title=col_label(serie_vl_col), overlaying="y", side="right"),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
-            st.plotly_chart(fig_line, use_container_width=True)
+            st.plotly_chart(fig_qtd, use_container_width=True)
+
+            # 2. Evolução do valor dos procedimentos
+            st.subheader("2) Evolução do valor dos procedimentos")
+            serie_vl_col = st.selectbox(
+                "Variável de valor",
+                options=avail_vl_cols,
+                format_func=col_label,
+                key="serie_vl",
+            )
+
+            # Valida que a coluna selecionada existe no df atual
+            if serie_vl_col not in df.columns:
+                serie_vl_col = "total_vl" if "total_vl" in df.columns else df.columns[0]
+
+            series_vl = (
+                df.groupby(["ano", "mes"], as_index=False)[[serie_vl_col]]
+                .sum()
+            )
+            series_vl["_mes_num"] = series_vl["mes"].apply(month_to_num)
+            series_vl = series_vl[series_vl["_mes_num"] > 0].copy()
+            series_vl = series_vl.sort_values(["ano", "_mes_num"])
+            series_vl["periodo"] = pd.to_datetime(
+                series_vl["ano"].astype(str) + "-" + series_vl["_mes_num"].astype(str).str.zfill(2) + "-01"
+            )
+
+            fig_vl = go.Figure()
+            fig_vl.add_trace(
+                go.Scatter(
+                    x=series_vl["periodo"],
+                    y=series_vl[serie_vl_col],
+                    mode="lines+markers",
+                    name=col_label(serie_vl_col),
+                )
+            )
+            fig_vl.update_layout(
+                yaxis=dict(title=col_label(serie_vl_col)),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(l=10, r=10, t=20, b=10),
+            )
+            st.plotly_chart(fig_vl, use_container_width=True)
 			
-# 2. Ranking Top 10
-            st.subheader("2) Ranking Top 10")
+# 3. Ranking Top 10
+            st.subheader("3) Ranking Top 10")
             st.caption("ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município.")
             
             # --- CORREÇÃO DE PROTEÇÃO CONTRA KEYERROR 'uf_nome' ---
@@ -877,7 +891,7 @@ with tab_charts:
             st.plotly_chart(fig_rank, width="stretch") # Corrigido use_container_width
 
 # 3. Scatter Plot
-            st.subheader("3) Scatter Plot")
+            st.subheader("4) Scatter Plot")
             st.caption("ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município.")
             sc_c1, sc_c2, sc_c3 = st.columns(3)
             with sc_c1:
@@ -996,7 +1010,7 @@ with tab_charts:
             )
 
             # 4. Treemap — Distribuição por categorias de procedimento
-            st.subheader("4) Treemap — Distribuição por categorias de procedimento")
+            st.subheader("5) Treemap — Distribuição por categorias de procedimento")
             treemap_mode = st.selectbox(
                 "Analisar categorias de",
                 options=["Quantidade (qtd_*)", "Valor (vl_*)"],
@@ -1052,7 +1066,7 @@ with tab_charts:
                 st.info("Não foram encontradas colunas de categorias de procedimento no recorte atual.")
 
             # 5. Heatmap Sazonal
-            st.subheader("5) Heatmap Sazonal")
+            st.subheader("6) Heatmap Sazonal")
             st.caption(
                 "Mapa de calor mês × ano (ou mês × UF) para identificar sazonalidade e quebras de padrão histórico.\n\n"
                 "ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município."
