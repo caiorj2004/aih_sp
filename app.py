@@ -678,6 +678,7 @@ with tab_kpis:
             }, index=stats_df.columns)
             
             _stats_display = _base.join(_extra).map(lambda v: br_format(v, 2))
+            _stats_display.index = [col_label(c) for c in _stats_display.index]
             st.dataframe(_stats_display, width="stretch") # Substituído use_container_width
 
             st.markdown("**Indicadores de referência do recorte atual:**")
