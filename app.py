@@ -37,6 +37,7 @@ from fallback import (
     get_fallback_procedure_columns,
     load_fallback_consolidated,
 )
+from pagina_chat import render_chat_page
 
 # ---------------------------------------------------------------------------
 # Configuração da página
@@ -189,12 +190,13 @@ st.caption("Análise de Autorizações de Internação Hospitalar com filtros hi
 # ---------------------------------------------------------------------------
 # Abas principais — Introdução sempre visível, dados carregados sob demanda
 # ---------------------------------------------------------------------------
-tab_intro, tab_raw, tab_kpis, tab_charts = st.tabs(
+tab_intro, tab_raw, tab_kpis, tab_charts, tab_chat = st.tabs(
     [
         "🏠 Introdução",
         "Lista dos Dados Armazenados",
         "Estatísticas Descritivas",
         "Gráficos Analíticos",
+        "🤖 Assistente IA",
     ]
 )
 
@@ -1137,3 +1139,7 @@ with tab_charts:
                 margin=dict(l=10, r=10, t=20, b=10),
             )
             st.plotly_chart(fig_heatmap, use_container_width=True)
+
+# ── 🤖 Assistente IA (Text-to-SQL) ─────────────────────────────────────────
+with tab_chat:
+    render_chat_page()
