@@ -40,7 +40,7 @@ def get_sql_agent():
     llm = ChatGroq(
         temperature=0, 
         groq_api_key=st.secrets["GROQ_API_KEY"],
-        model_name="llama3-70b-8192"
+        model_name="llama-3.3-70b-versatile"
     )
     return create_sql_agent(
         llm=llm,
