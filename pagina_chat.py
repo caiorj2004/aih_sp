@@ -6,6 +6,7 @@ from langchain_community.utilities import SQLDatabase
 from langchain_groq import ChatGroq
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
+from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
 
 _DATA_DIR = pathlib.Path(__file__).parent / "data"
 _QTD_FILE = _DATA_DIR / "aih_qtd_fallback.parquet"
@@ -79,21 +80,31 @@ def render_chat_page() -> None:
 
     assistant_answer = ""
     with st.chat_message("assistant"):
-        with st.spinner("A IA está a processar os dados..."):
-            try:
-                agent = get_sql_agent()
-                result = agent.invoke({"input": user_question})
-                assistant_answer = result.get("output", "") if isinstance(result, dict) else str(result)
-                if not assistant_answer:
-                    assistant_answer = "Não consegui gerar uma resposta para essa pergunta."
-                st.markdown(assistant_answer)
+        # Cria o container visual para exibir o passo-a-passo (e o SQL)
+        st_callback = StreamlitCallbackHandler(st.container(), expand_new_thoughts=False)
+        
+        try:
+            agent = get_sql_agent()
             
-            except Exception as exc:
-                assistant_answer = (
-                    "Não consegui processar essa pergunta agora. "
-                    "Por favor, reformule sua pergunta e tente novamente."
-                )
-                st.error(assistant_answer)
-                st.caption(f"Detalhe técnico: {exc.__class__.__name__} - {str(exc)}")
+            # Passamos o st_callback para o agente mostrar o que está fazendo
+            result = agent.invoke(
+                {"input": user_question},
+                {"callbacks": [st_callback]}
+            )
+            
+            assistant_answer = result.get("output", "") if isinstance(result, dict) else str(result)
+            if not assistant_answer:
+                assistant_answer = "Não consegui gerar uma resposta para essa pergunta."
+            
+            # Exibe a resposta final em texto
+            st.markdown(f"**Resposta:**\n{assistant_answer}")
+            
+        except Exception as exc:
+            assistant_answer = (
+                "Não consegui processar essa pergunta agora. "
+                "Por favor, reformule sua pergunta e tente novamente."
+            )
+            st.error(assistant_answer)
+            st.caption(f"Detalhe técnico: {exc.__class__.__name__} - {str(exc)}")
 
     st.session_state.chat_messages.append({"role": "assistant", "content": assistant_answer})
