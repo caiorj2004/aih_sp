@@ -13,6 +13,7 @@ _VL_FILE = _DATA_DIR / "aih_vl_fallback.parquet"
 
 @st.cache_resource
 def get_duckdb_sql_database() -> SQLDatabase:
+    """Build an ephemeral in-memory DuckDB with views over local fallback Parquet files."""
     if not _QTD_FILE.exists() or not _VL_FILE.exists():
         raise FileNotFoundError("Arquivos Parquet de fallback não encontrados na pasta data/.")
 
@@ -77,11 +78,12 @@ def render_chat_page() -> None:
                     "`GROQ_API_KEY` em `st.secrets`."
                 )
                 st.error(assistant_answer)
-            except Exception:
+            except Exception as exc:
                 assistant_answer = (
                     "Não consegui processar essa pergunta agora. "
                     "Por favor, reformule sua pergunta e tente novamente."
                 )
                 st.error(assistant_answer)
+                st.caption(f"Detalhe técnico: {exc.__class__.__name__}")
 
     st.session_state.chat_messages.append({"role": "assistant", "content": assistant_answer})
