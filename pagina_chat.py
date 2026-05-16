@@ -83,12 +83,7 @@ def render_chat_page() -> None:
                 if not assistant_answer:
                     assistant_answer = "Não consegui gerar uma resposta para essa pergunta."
                 st.markdown(assistant_answer)
-            except KeyError:
-                assistant_answer = (
-                    "Não foi possível inicializar o assistente: configure "
-                    "`GROQ_API_KEY` em `st.secrets`."
-                )
-                st.error(assistant_answer)
+            
             except Exception as exc:
                 assistant_answer = (
                     "Não consegui processar essa pergunta agora. "
