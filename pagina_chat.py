@@ -17,9 +17,19 @@ def get_duckdb_sql_database() -> SQLDatabase:
     if not _QTD_FILE.exists() or not _VL_FILE.exists():
         raise FileNotFoundError("Arquivos Parquet de fallback não encontrados na pasta data/.")
 
+    data_dir = _DATA_DIR.resolve(strict=True)
+    qtd_file = _QTD_FILE.resolve(strict=True)
+    vl_file = _VL_FILE.resolve(strict=True)
+
+    try:
+        qtd_file.relative_to(data_dir)
+        vl_file.relative_to(data_dir)
+    except ValueError as exc:
+        raise ValueError("Os arquivos Parquet devem estar estritamente dentro da pasta data/.") from exc
+
     engine = create_engine("duckdb:///:memory:")
-    qtd_path = _QTD_FILE.as_posix().replace("'", "''")
-    vl_path = _VL_FILE.as_posix().replace("'", "''")
+    qtd_path = qtd_file.as_posix().replace("'", "''")
+    vl_path = vl_file.as_posix().replace("'", "''")
 
     with engine.begin() as conn:
         conn.execute(text(f"CREATE OR REPLACE VIEW aih_qtd AS SELECT * FROM read_parquet('{qtd_path}')"))

@@ -3,9 +3,9 @@ pandas>=2.0
 plotly>=5.20
 sqlalchemy>=2.0
 psycopg2-binary>=2.9
-pyarrow
-duckdb
-duckdb-engine
-langchain
-langchain-community
-langchain-groq
+pyarrow>=14.0
+duckdb>=1.0
+duckdb-engine>=0.13
+langchain>=0.2
+langchain-community>=0.2
+langchain-groq>=0.1
