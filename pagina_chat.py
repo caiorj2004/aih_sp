@@ -9,11 +9,12 @@ from sqlalchemy import create_engine, text
 _DATA_DIR = pathlib.Path(__file__).parent / "data"
 _QTD_FILE = _DATA_DIR / "aih_qtd_fallback.parquet"
 _VL_FILE = _DATA_DIR / "aih_vl_fallback.parquet"
+_DUCKDB_FILE = _DATA_DIR / "banco_ia.duckdb"
 
 
 @st.cache_resource
 def get_duckdb_sql_database() -> SQLDatabase:
-    """Build an ephemeral in-memory DuckDB with views over local fallback Parquet files."""
+    """Build a local DuckDB catalog with views over local fallback Parquet files."""
     if not _QTD_FILE.exists() or not _VL_FILE.exists():
         raise FileNotFoundError("Arquivos Parquet de fallback não encontrados na pasta data/.")
 
@@ -27,7 +28,8 @@ def get_duckdb_sql_database() -> SQLDatabase:
     except ValueError as exc:
         raise ValueError("Os arquivos Parquet devem estar estritamente dentro da pasta data/.") from exc
 
-    engine = create_engine("duckdb:///:memory:")
+    duckdb_path = _DUCKDB_FILE.resolve().as_posix()
+    engine = create_engine(f"duckdb:///{duckdb_path}")
     qtd_path = qtd_file.as_posix().replace("'", "''")
     vl_path = vl_file.as_posix().replace("'", "''")
 
@@ -46,14 +48,14 @@ def get_sql_agent():
         groq_api_key=st.secrets["GROQ_API_KEY"], # Precisa ser exatamente igual ao painel
         model_name="llama3-70b-8192"
     )
-    return create_sql_agent(llm=llm, db=db)
+    return create_sql_agent(llm=llm, db=db, handle_parsing_errors=True)
 
 
 def render_chat_page() -> None:
     st.subheader("🤖 Assistente IA (Text-to-SQL)")
     st.caption(
         "Faça perguntas em linguagem natural sobre os dados. "
-        "A IA usa DuckDB em memória com os arquivos Parquet locais."
+        "A IA usa DuckDB local com os arquivos Parquet de fallback."
     )
 
     if "chat_messages" not in st.session_state:
