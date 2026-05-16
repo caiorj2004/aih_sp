@@ -12,7 +12,6 @@ _VL_FILE = _DATA_DIR / "aih_vl_fallback.parquet"
 _DUCKDB_FILE = _DATA_DIR / "banco_ia.duckdb"
 
 
-@st.cache_resource
 def get_duckdb_sql_database() -> SQLDatabase:
     """Build a local DuckDB catalog with views over local fallback Parquet files."""
     if not _QTD_FILE.exists() or not _VL_FILE.exists():
@@ -51,8 +50,9 @@ def get_sql_agent():
     return create_sql_agent(
         llm=llm,
         db=db,
-        agent_type="tool-calling",
+        agent_type="zero-shot-react-description",
         handle_parsing_errors=True,
+        verbose=True,
     )
 
 
@@ -100,6 +100,6 @@ def render_chat_page() -> None:
                     "Por favor, reformule sua pergunta e tente novamente."
                 )
                 st.error(assistant_answer)
-                st.caption(f"Detalhe técnico: {exc.__class__.__name__}")
+                st.caption(f"Detalhe técnico: {exc.__class__.__name__} - {str(exc)}")
 
     st.session_state.chat_messages.append({"role": "assistant", "content": assistant_answer})
