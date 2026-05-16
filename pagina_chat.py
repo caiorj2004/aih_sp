@@ -5,6 +5,7 @@ from langchain_community.agent_toolkits import create_sql_agent
 from langchain_community.utilities import SQLDatabase
 from langchain_groq import ChatGroq
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import StaticPool
 
 _DATA_DIR = pathlib.Path(__file__).parent / "data"
 _QTD_FILE = _DATA_DIR / "aih_qtd_fallback.parquet"
@@ -14,22 +15,25 @@ _DUCKDB_FILE = _DATA_DIR / "banco_ia.duckdb"
 
 @st.cache_resource
 def get_sqlite_sql_database() -> SQLDatabase:
-    """Cria um banco SQLite em memória a partir dos arquivos Parquet."""
+    """Cria um banco SQLite em memória a partir dos arquivos Parquet usando Pandas."""
     if not _QTD_FILE.exists() or not _VL_FILE.exists():
         raise FileNotFoundError("Arquivos Parquet de fallback não encontrados na pasta data/.")
 
-    # 1. Cria a base de dados SQLite na memória RAM
-    engine = create_engine("sqlite:///:memory:")
+    # AQUI ESTÁ A CORREÇÃO:
+    # O StaticPool força todas as conexões a olharem para a mesma tabela na RAM
+    engine = create_engine(
+        "sqlite:///:memory:", 
+        connect_args={"check_same_thread": False}, 
+        poolclass=StaticPool
+    )
 
-    # 2. Lê os arquivos Parquet com o Pandas
+    # Lê os parquets e injeta no SQLite de forma nativa
     df_qtd = pd.read_parquet(_QTD_FILE)
     df_vl = pd.read_parquet(_VL_FILE)
-
-    # 3. Transfere os dados do Pandas diretamente para o SQLite
+    
     df_qtd.to_sql("aih_qtd", engine, index=False, if_exists="replace")
     df_vl.to_sql("aih_vl", engine, index=False, if_exists="replace")
 
-    # Retorna o banco para o LangChain (O SQLite não tem o bug do pg_collation!)
     return SQLDatabase(engine)
 
 @st.cache_resource
