@@ -34,18 +34,20 @@ def get_sqlite_sql_database() -> SQLDatabase:
 
 @st.cache_resource
 def get_sql_agent():
-    db = get_duckdb_sql_database()
+    # CHAME A NOVA FUNÇÃO AQUI:
+    db = get_sqlite_sql_database() 
+    
     llm = ChatGroq(
         temperature=0, 
-        groq_api_key=st.secrets["GROQ_API_KEY"], # Precisa ser exatamente igual ao painel
+        groq_api_key=st.secrets["GROQ_API_KEY"],
         model_name="llama3-70b-8192"
     )
     return create_sql_agent(
         llm=llm,
         db=db,
-        agent_type="zero-shot-react-description",
+        agent_type="zero-shot-react-description", 
         handle_parsing_errors=True,
-        verbose=True,
+        verbose=True
     )
 
 
