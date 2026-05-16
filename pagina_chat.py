@@ -37,7 +37,7 @@ def get_duckdb_sql_database() -> SQLDatabase:
         conn.execute(text(f"CREATE OR REPLACE VIEW aih_qtd AS SELECT * FROM read_parquet('{qtd_path}')"))
         conn.execute(text(f"CREATE OR REPLACE VIEW aih_vl AS SELECT * FROM read_parquet('{vl_path}')"))
 
-    return SQLDatabase(engine=engine, include_tables=["aih_qtd", "aih_vl"])
+    return SQLDatabase(engine=engine, include_tables=["aih_qtd", "aih_vl"], view_support=True)
 
 
 @st.cache_resource
@@ -48,7 +48,12 @@ def get_sql_agent():
         groq_api_key=st.secrets["GROQ_API_KEY"], # Precisa ser exatamente igual ao painel
         model_name="llama3-70b-8192"
     )
-    return create_sql_agent(llm=llm, db=db, handle_parsing_errors=True)
+    return create_sql_agent(
+        llm=llm,
+        db=db,
+        agent_type="tool-calling",
+        handle_parsing_errors=True,
+    )
 
 
 def render_chat_page() -> None:
