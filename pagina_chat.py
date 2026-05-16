@@ -1,5 +1,5 @@
 import pathlib
-
+import pandas as pd
 import streamlit as st
 from langchain_community.agent_toolkits import create_sql_agent
 from langchain_community.utilities import SQLDatabase
@@ -13,32 +13,23 @@ _DUCKDB_FILE = _DATA_DIR / "banco_ia.duckdb"
 
 
 @st.cache_resource
-def get_duckdb_sql_database() -> SQLDatabase:
-    """Build a local DuckDB catalog with tables over local fallback Parquet files."""
+def get_sqlite_sql_database() -> SQLDatabase:
+    """Cria um banco SQLite em memória a partir dos arquivos Parquet."""
     if not _QTD_FILE.exists() or not _VL_FILE.exists():
         raise FileNotFoundError("Arquivos Parquet de fallback não encontrados na pasta data/.")
 
-    data_dir = _DATA_DIR.resolve(strict=True)
-    qtd_file = _QTD_FILE.resolve(strict=True)
-    vl_file = _VL_FILE.resolve(strict=True)
+    # 1. Cria a base de dados SQLite na memória RAM
+    engine = create_engine("sqlite:///:memory:")
 
-    try:
-        qtd_file.relative_to(data_dir)
-        vl_file.relative_to(data_dir)
-    except ValueError as exc:
-        raise ValueError("Os arquivos Parquet devem estar estritamente dentro da pasta data/.") from exc
+    # 2. Lê os arquivos Parquet com o Pandas
+    df_qtd = pd.read_parquet(_QTD_FILE)
+    df_vl = pd.read_parquet(_VL_FILE)
 
-    duckdb_path = _DUCKDB_FILE.resolve().as_posix()
-    engine = create_engine(f"duckdb:///{duckdb_path}")
-    qtd_path = qtd_file.as_posix().replace("\\", "/")
-    vl_path = vl_file.as_posix().replace("\\", "/")
+    # 3. Transfere os dados do Pandas diretamente para o SQLite
+    df_qtd.to_sql("aih_qtd", engine, index=False, if_exists="replace")
+    df_vl.to_sql("aih_vl", engine, index=False, if_exists="replace")
 
-    # ALTERAÇÃO 1: Criar TABLE em vez de VIEW
-    with engine.begin() as conn:
-        conn.execute(text(f"CREATE OR REPLACE TABLE aih_qtd AS SELECT * FROM '{qtd_path}'"))
-        conn.execute(text(f"CREATE OR REPLACE TABLE aih_vl AS SELECT * FROM '{vl_path}'"))
-
-    # ALTERAÇÃO 2: Remover o view_support=True
+    # Retorna o banco para o LangChain (O SQLite não tem o bug do pg_collation!)
     return SQLDatabase(engine)
 
 @st.cache_resource
