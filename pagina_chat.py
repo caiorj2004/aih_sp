@@ -79,7 +79,7 @@ def get_sql_agent():
     )
 
 def render_chat_page():
-    st.subheader("🤖 Assistente IA (Versão Estável)")
+    st.subheader("🤖 Assistente IA")
     
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
