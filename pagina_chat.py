@@ -12,8 +12,9 @@ _VL_FILE = _DATA_DIR / "aih_vl_fallback.parquet"
 _DUCKDB_FILE = _DATA_DIR / "banco_ia.duckdb"
 
 
+@st.cache_resource
 def get_duckdb_sql_database() -> SQLDatabase:
-    """Build a local DuckDB catalog with views over local fallback Parquet files."""
+    """Build a local DuckDB catalog with tables over local fallback Parquet files."""
     if not _QTD_FILE.exists() or not _VL_FILE.exists():
         raise FileNotFoundError("Arquivos Parquet de fallback não encontrados na pasta data/.")
 
@@ -29,15 +30,16 @@ def get_duckdb_sql_database() -> SQLDatabase:
 
     duckdb_path = _DUCKDB_FILE.resolve().as_posix()
     engine = create_engine(f"duckdb:///{duckdb_path}")
-    qtd_path = qtd_file.as_posix().replace("'", "''")
-    vl_path = vl_file.as_posix().replace("'", "''")
+    qtd_path = qtd_file.as_posix().replace("\\", "/")
+    vl_path = vl_file.as_posix().replace("\\", "/")
 
+    # ALTERAÇÃO 1: Criar TABLE em vez de VIEW
     with engine.begin() as conn:
-        conn.execute(text(f"CREATE OR REPLACE VIEW aih_qtd AS SELECT * FROM read_parquet('{qtd_path}')"))
-        conn.execute(text(f"CREATE OR REPLACE VIEW aih_vl AS SELECT * FROM read_parquet('{vl_path}')"))
+        conn.execute(text(f"CREATE OR REPLACE TABLE aih_qtd AS SELECT * FROM '{qtd_path}'"))
+        conn.execute(text(f"CREATE OR REPLACE TABLE aih_vl AS SELECT * FROM '{vl_path}'"))
 
-    return SQLDatabase(engine=engine, include_tables=["aih_qtd", "aih_vl"], view_support=True)
-
+    # ALTERAÇÃO 2: Remover o view_support=True
+    return SQLDatabase(engine)
 
 @st.cache_resource
 def get_sql_agent():
