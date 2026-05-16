@@ -8,62 +8,60 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
 
-# --- CONFIGURAÇÕES DE ECONOMIA ---
-MODELO_ECONOMICO = "llama-3.1-8b-instant"
-LIMITE_MEMORIA_CHAT = 3  # Mantém apenas as últimas 3 trocas de mensagens
-# --------------------------------
-
 _DATA_DIR = pathlib.Path(__file__).parent / "data"
 _QTD_FILE = _DATA_DIR / "aih_qtd_fallback.parquet"
 _VL_FILE = _DATA_DIR / "aih_vl_fallback.parquet"
 _DIC_QTD_FILE = _DATA_DIR / "dicionario_qtd.csv"
 _DIC_VL_FILE = _DATA_DIR / "dicionario_vl.csv"
 
-def clean_description(df, prefix_to_remove):
-    """Limpa descrições para economizar tokens no prompt."""
-    df['nome_procedimento'] = df['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
-    df['codigo_sufixo'] = df['Variável'].str.replace(prefix_to_remove, "", regex=False)
-    return df[['nome_procedimento', 'codigo_sufixo']].dropna()
-
 @st.cache_resource
 def get_sqlite_sql_database() -> SQLDatabase:
-    if not _QTD_FILE.exists() or not _VL_FILE.exists():
-        raise FileNotFoundError("Arquivos não encontrados.")
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    
+    # Carregar dados
+    df_qtd = pd.read_parquet(_QTD_FILE)
+    df_vl = pd.read_parquet(_VL_FILE)
+    df_qtd.to_sql("aih_qtd", engine, index=False, if_exists="replace")
+    df_vl.to_sql("aih_vl", engine, index=False, if_exists="replace")
 
-    engine = create_engine(
-        "sqlite:///:memory:", 
-        connect_args={"check_same_thread": False}, 
-        poolclass=StaticPool
-    )
-
-    pd.read_parquet(_QTD_FILE).to_sql("aih_qtd", engine, index=False, if_exists="replace")
-    pd.read_parquet(_VL_FILE).to_sql("aih_vl", engine, index=False, if_exists="replace")
-
+    # Carregar dicionários
     if _DIC_QTD_FILE.exists():
-        df_dic_qtd = pd.read_csv(_DIC_QTD_FILE)
-        clean_description(df_dic_qtd, "qtd_").to_sql("dic_procedimentos_qtd", engine, index=False, if_exists="replace")
+        df = pd.read_csv(_DIC_QTD_FILE)
+        df['n'] = df['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
+        df['s'] = df['Variável'].str.replace("qtd_", "", regex=False)
+        df[['n', 's']].dropna().to_sql("dic_qtd", engine, index=False, if_exists="replace")
 
     if _DIC_VL_FILE.exists():
-        df_dic_vl = pd.read_csv(_DIC_VL_FILE)
-        clean_description(df_dic_vl, "vl_").to_sql("dic_procedimentos_vl", engine, index=False, if_exists="replace")
+        df = pd.read_csv(_DIC_VL_FILE)
+        df['n'] = df['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
+        df['s'] = df['Variável'].str.replace("vl_", "", regex=False)
+        df[['n', 's']].dropna().to_sql("dic_vl", engine, index=False, if_exists="replace")
 
-    return SQLDatabase(engine)
+    # AJUSTE: Damos exemplos reais de colunas para evitar que ele "tente adivinhar" e entre em loop
+    custom_info = {
+        "aih_qtd": "Dados de quantidade. Colunas: ano, mes, municipio, total, e colunas de procedimentos como 'qtd_0101', 'qtd_0201', etc.",
+        "aih_vl": "Dados de valores (R$). Colunas: ano, mes, municipio, total, e colunas de procedimentos como 'vl_0101', 'vl_0201', etc.",
+        "dic_qtd": "Mapeia nomes para sufixos de quantidade. Colunas: n (nome), s (sufixo).",
+        "dic_vl": "Mapeia nomes para sufixos de valor. Colunas: n (nome), s (sufixo)."
+    }
+
+    return SQLDatabase(engine, custom_table_info=custom_info)
 
 @st.cache_resource
 def get_sql_agent():
     db = get_sqlite_sql_database() 
-    
     llm = ChatGroq(
         temperature=0, 
-        groq_api_key=st.secrets["GROQ_API_KEY"],
-        model_name=MODELO_ECONOMICO # <--- MUDANÇA PARA O MODELO 8B
+        groq_api_key=st.secrets["GROQ_API_KEY"], 
+        model_name="llama-3.1-8b-instant"
     )
 
-    # Instruções curtas = menos tokens gastos por pergunta
-    instrucoes = (
-        "Você é um assistente DATASUS. Use as tabelas `dic_procedimentos_qtd` (volumes) "
-        "ou `dic_procedimentos_vl` (valores) para achar o sufixo numérico via LIKE. "
-        "Tabelas de dados: `aih_qtd` (colunas qtd_XXXX) e `aih_vl` (colunas vl_XXXX)."
+    prefixo = (
+        "Você é um analista de dados. Siga estritamente este fluxo:\n"
+        "1. Procure o nome do procedimento em `dic_qtd` ou `dic_vl` usando LIKE.\n"
+        "2. Pegue o sufixo 's' retornado.\n"
+        "3. Use esse sufixo para somar a coluna correta (ex: SUM(vl_0401)) em aih_vl ou aih_qtd.\n"
+        "Se não encontrar o procedimento, responda que não encontrou e pare."
     )
 
     return create_sql_agent(
@@ -71,52 +69,39 @@ def get_sql_agent():
         db=db,
         agent_type="zero-shot-react-description", 
         handle_parsing_errors=True,
-        prefix=instrucoes
+        prefix=prefixo,
+        max_iterations=3,          # <--- CORREÇÃO: Impede loops infinitos
+        early_stopping_method="generate", # <--- CORREÇÃO: Força uma resposta se estiver demorando
+        verbose=False
     )
 
-def render_chat_page() -> None:
-    st.subheader("🤖 Assistente IA (Modo Econômico)")
+def render_chat_page():
+    st.subheader("🤖 Assistente IA (Anti-Loop)")
     
-    # Botão para limpar histórico e resetar tokens
-    if st.sidebar.button("Limpar Conversa (Zerar Tokens)"):
-        st.session_state.chat_messages = []
-        st.rerun()
-
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
 
-    # Exibe apenas as mensagens recentes
-    for msg in st.session_state.chat_messages:
+    for msg in st.session_state.chat_messages[-4:]: # Mantém histórico curto
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
     user_question = st.chat_input("Sua pergunta...")
-    if not user_question:
-        return
+    if user_question:
+        st.session_state.chat_messages.append({"role": "user", "content": user_question})
+        with st.chat_message("user"):
+            st.markdown(user_question)
 
-    st.session_state.chat_messages.append({"role": "user", "content": user_question})
-    with st.chat_message("user"):
-        st.markdown(user_question)
-
-    with st.chat_message("assistant"):
-        st_callback = StreamlitCallbackHandler(st.container(), expand_new_thoughts=False)
-        try:
-            agent = get_sql_agent()
+        with st.chat_message("assistant"):
+            # O container ajuda a evitar que a tela fique pulando durante o loop de reflexão
+            thinking_container = st.container()
+            st_callback = StreamlitCallbackHandler(thinking_container, expand_new_thoughts=False)
             
-            # ECONOMIA ATIVA: O agente recebe a pergunta, mas não enviamos o histórico gigante
-            # Agentes SQL funcionam melhor de forma independente para economizar tokens
-            result = agent.invoke(
-                {"input": user_question},
-                {"callbacks": [st_callback]}
-            )
-            
-            answer = result.get("output", "") if isinstance(result, dict) else str(result)
-            st.markdown(answer)
-            st.session_state.chat_messages.append({"role": "assistant", "content": answer})
-            
-            # PODA DO HISTÓRICO: Remove mensagens antigas para não sobrecarregar a memória do navegador/app
-            if len(st.session_state.chat_messages) > LIMITE_MEMORIA_CHAT * 2:
-                st.session_state.chat_messages = st.session_state.chat_messages[-LIMITE_MEMORIA_CHAT * 2:]
-            
-        except Exception as exc:
-            st.error(f"Erro: {exc}")
+            try:
+                agent = get_sql_agent()
+                # timeout de 30 segundos para evitar travamentos
+                result = agent.invoke({"input": user_question}, {"callbacks": [st_callback]})
+                answer = result.get("output", "Não consegui processar os dados a tempo.")
+                st.markdown(answer)
+                st.session_state.chat_messages.append({"role": "assistant", "content": answer})
+            except Exception as e:
+                st.error("Ocorreu um erro ou o limite de tempo foi atingido. Tente simplificar a pergunta.")
