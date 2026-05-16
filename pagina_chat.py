@@ -46,7 +46,7 @@ def get_sql_agent():
         groq_api_key=st.secrets["GROQ_API_KEY"], # Precisa ser exatamente igual ao painel
         model_name="llama3-70b-8192"
     )
-    return create_sql_agent(llm=llm, db=db, agent_type="tool-calling")
+    return create_sql_agent(llm=llm, db=db)
 
 
 def render_chat_page() -> None:
