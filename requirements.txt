@@ -4,3 +4,8 @@ plotly>=5.20
 sqlalchemy>=2.0
 psycopg2-binary>=2.9
 pyarrow
+duckdb
+duckdb-engine
+langchain
+langchain-community
+langchain-groq
