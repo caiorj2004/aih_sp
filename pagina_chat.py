@@ -39,12 +39,12 @@ def get_duckdb_sql_database() -> SQLDatabase:
 
 
 @st.cache_resource
-def get_sql_agent(api_key: str):
+def get_sql_agent():
     db = get_duckdb_sql_database()
     llm = ChatGroq(
-        model_name="llama3-70b-8192",
-        temperature=0,
-        api_key=api_key,
+        temperature=0, 
+        groq_api_key=st.secrets["GROQ_API_KEY"], # Precisa ser exatamente igual ao painel
+        model_name="llama3-70b-8192"
     )
     return create_sql_agent(llm=llm, db=db, agent_type="tool-calling")
 
@@ -75,8 +75,7 @@ def render_chat_page() -> None:
     with st.chat_message("assistant"):
         with st.spinner("A IA está a processar os dados..."):
             try:
-                api_key = st.secrets["GROQ_API_KEY"]
-                agent = get_sql_agent(api_key)
+                agent = get_sql_agent()
                 result = agent.invoke({"input": user_question})
                 assistant_answer = result.get("output", "") if isinstance(result, dict) else str(result)
                 if not assistant_answer:
