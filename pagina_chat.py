@@ -57,10 +57,7 @@ def get_sql_agent():
     
     # Validação estrita
     if "AWS_ACCESS_KEY_ID" not in st.secrets or "AWS_SECRET_ACCESS_KEY" not in st.secrets:
-        raise KeyError(
-            "Credenciais da AWS ausentes. Por favor, adicione AWS_ACCESS_KEY_ID e "
-            "AWS_SECRET_ACCESS_KEY no painel 'App settings > Secrets' do Streamlit Cloud."
-        )
+        raise KeyError(...)
 
     # Coleta as credenciais básicas
     aws_access_key = st.secrets["AWS_ACCESS_KEY_ID"]
