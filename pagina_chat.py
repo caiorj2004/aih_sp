@@ -105,7 +105,7 @@ def get_sql_agent():
         agent_type="zero-shot-react-description", 
         handle_parsing_errors=True,
         prefix=prefixo,
-        max_iterations=5,
+        max_iterations=15,
         verbose=False
     )
 
