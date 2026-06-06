@@ -55,9 +55,17 @@ def get_sqlite_sql_database() -> SQLDatabase:
 def get_sql_agent():
     db = get_sqlite_sql_database() 
     
-    # Validação estrita
+    # --- LINHA DE DEBUG ---
+    # Isto vai imprimir na tela exatamente o que o Streamlit conseguiu ler do painel
+    st.error(f"Chaves que o app encontrou: {list(st.secrets.keys())}")
+    # -------------------------------------------------------------------------
+
+    # Validação estrita (CORRIGIDA - Sem os três pontinhos)
     if "AWS_ACCESS_KEY_ID" not in st.secrets or "AWS_SECRET_ACCESS_KEY" not in st.secrets:
-        raise KeyError(...)
+        raise KeyError(
+            "Credenciais da AWS ausentes. Por favor, verifique se elas foram salvas corretamente "
+            "no formato TOML no painel do Streamlit Cloud."
+        )
 
     # Coleta as credenciais básicas
     aws_access_key = st.secrets["AWS_ACCESS_KEY_ID"]
@@ -73,7 +81,7 @@ def get_sql_agent():
         region_name=aws_region,
         aws_access_key_id=aws_access_key,
         aws_secret_access_key=aws_secret_key,
-        aws_session_token=aws_session_token, # <- Adicionamos o token aqui!
+        aws_session_token=aws_session_token,
     )
 
     # Configura o LLM com o Claude 3.5 Sonnet
