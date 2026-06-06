@@ -1,16 +1,17 @@
 import pathlib
 import pandas as pd
 import streamlit as st
+import boto3
 from langchain_community.agent_toolkits import create_sql_agent
 from langchain_community.utilities import SQLDatabase
-from langchain_groq import ChatGroq
+from langchain_aws import ChatBedrock
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
 
-# --- CONFIGURAÇÃO DE SUCESSO ---
-# O 70B é necessário pela inteligência, mas vamos economizar tokens escondendo as colunas
-MODELO_PODEROSO = "llama-3.3-70b-versatile" 
+# --- CONFIGURAÇÃO BEDROCK ---
+# Utilizando o Claude 3.5 Sonnet, o melhor modelo atual para SQL e raciocínio lógico
+MODELO_PODEROSO = "anthropic.claude-3-5-sonnet-20240620-v1:0" 
 
 _DATA_DIR = pathlib.Path(__file__).parent / "data"
 _QTD_FILE = _DATA_DIR / "aih_qtd_fallback.parquet"
@@ -42,8 +43,7 @@ def get_sqlite_sql_database() -> SQLDatabase:
     if dics:
         pd.concat(dics).drop_duplicates().to_sql("dic_geral", engine, index=False, if_exists="replace")
 
-    # 3. ESCUDO DE TOKENS: Omitimos as 100+ colunas da descrição da tabela
-    # Dizemos ao agente que ele NÃO PODE ler o esquema dessas tabelas.
+    # 3. ESCUDO DE TOKENS
     custom_info = {
         "aih_qtd": "Tabela de quantidades. Use APENAS colunas: ano, mes, municipio e as colunas 'qtd_XXXX' que você descobrir via dic_geral.",
         "aih_vl": "Tabela de valores (R$). Use APENAS colunas: ano, mes, municipio e as colunas 'vl_XXXX' que você descobrir via dic_geral.",
@@ -55,7 +55,25 @@ def get_sqlite_sql_database() -> SQLDatabase:
 @st.cache_resource
 def get_sql_agent():
     db = get_sqlite_sql_database() 
-    llm = ChatGroq(temperature=0, groq_api_key=st.secrets["GROQ_API_KEY"], model_name=MODELO_PODEROSO)
+    
+    # Verifica se as chaves da AWS estão configuradas
+    if "AWS_ACCESS_KEY_ID" not in st.secrets:
+        raise KeyError("Credenciais da AWS não encontradas no st.secrets!")
+
+    # Inicia o cliente Bedrock
+    bedrock_client = boto3.client(
+        service_name="bedrock-runtime",
+        region_name=st.secrets.get("AWS_DEFAULT_REGION", "us-east-1"),
+        aws_access_key_id=st.secrets["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=st.secrets["AWS_SECRET_ACCESS_KEY"],
+    )
+
+    # Configura o LLM com o Claude 3.5 Sonnet
+    llm = ChatBedrock(
+        client=bedrock_client,
+        model_id=MODELO_PODEROSO,
+        model_kwargs={"temperature": 0}
+    )
 
     prefixo = (
         "Você é um analista experiente. SIGA ESTA ORDEM E NÃO INVENTE COLUNAS:\n"
@@ -71,37 +89,34 @@ def get_sql_agent():
         agent_type="zero-shot-react-description", 
         handle_parsing_errors=True,
         prefix=prefixo,
-        max_iterations=5, # Mais tentativas para o 70B não desistir
+        max_iterations=5,
         verbose=False
     )
 
 def render_chat_page():
-    st.subheader("🤖 Assistente DATASUS")
+    st.subheader("🤖 Assistente DATASUS (AWS Bedrock)")
     
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
 
-    # Exibe histórico curto para não gastar tokens
+    # Exibe histórico curto
     for msg in st.session_state.chat_messages[-4:]:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    user_question = st.chat_input("Pergunta...")
+    user_question = st.chat_input("Ex: Qual o valor gasto com cirurgia de mama em 2023?")
     if user_question:
         st.session_state.chat_messages.append({"role": "user", "content": user_question})
-        with st.chat_message("user"): st.markdown(user_question)
+        with st.chat_message("user"): 
+            st.markdown(user_question)
 
         with st.chat_message("assistant"):
             st_callback = StreamlitCallbackHandler(st.container(), expand_new_thoughts=False)
             try:
                 agent = get_sql_agent()
-                # Passamos o input de forma isolada para garantir economia total
                 result = agent.invoke({"input": user_question}, {"callbacks": [st_callback]})
                 answer = result.get("output", "Não consegui extrair os dados.")
                 st.markdown(answer)
                 st.session_state.chat_messages.append({"role": "assistant", "content": answer})
             except Exception as e:
-                if "429" in str(e):
-                    st.error("Limite diário do Groq atingido.")
-                else:
-                    st.error(f"Erro: {e}")
+                st.error(f"Erro na comunicação com a AWS Bedrock: {e}")
