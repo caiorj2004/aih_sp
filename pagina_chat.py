@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
 
 # --- CONFIGURAÇÃO BEDROCK ---
-MODELO_PODEROSO = "us.anthropic.claude-3-5-sonnet-20241022-v2:0" 
+MODELO_PODEROSO = "us.anthropic.claude-3-haiku-20240307-v1:0" 
 
 _DATA_DIR = pathlib.Path(__file__).parent / "data"
 _QTD_FILE = _DATA_DIR / "aih_qtd_fallback.parquet"
