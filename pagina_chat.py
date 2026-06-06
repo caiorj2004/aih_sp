@@ -10,7 +10,6 @@ from sqlalchemy.pool import StaticPool
 from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
 
 # --- CONFIGURAÇÃO BEDROCK ---
-# Utilizando o Claude 3.5 Sonnet, o melhor modelo atual para SQL e raciocínio lógico
 MODELO_PODEROSO = "anthropic.claude-3-5-sonnet-20240620-v1:0" 
 
 _DATA_DIR = pathlib.Path(__file__).parent / "data"
@@ -56,9 +55,12 @@ def get_sqlite_sql_database() -> SQLDatabase:
 def get_sql_agent():
     db = get_sqlite_sql_database() 
     
-    # Verifica se as chaves da AWS estão configuradas
-    if "AWS_ACCESS_KEY_ID" not in st.secrets:
-        raise KeyError("Credenciais da AWS não encontradas no st.secrets!")
+    # Validação estrita: Lê EXCLUSIVAMENTE do painel de secrets do Streamlit
+    if "AWS_ACCESS_KEY_ID" not in st.secrets or "AWS_SECRET_ACCESS_KEY" not in st.secrets:
+        raise KeyError(
+            "Credenciais da AWS ausentes. Por favor, adicione AWS_ACCESS_KEY_ID e "
+            "AWS_SECRET_ACCESS_KEY no painel 'App settings > Secrets' do Streamlit Cloud."
+        )
 
     # Inicia o cliente Bedrock
     bedrock_client = boto3.client(
@@ -99,12 +101,11 @@ def render_chat_page():
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
 
-    # Exibe histórico curto
     for msg in st.session_state.chat_messages[-4:]:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    user_question = st.chat_input("Ex: Qual o valor total gasto por ano?")
+    user_question = st.chat_input("Ex: Qual o valor gasto com cirurgia de mama em 2023?")
     if user_question:
         st.session_state.chat_messages.append({"role": "user", "content": user_question})
         with st.chat_message("user"): 
@@ -119,4 +120,4 @@ def render_chat_page():
                 st.markdown(answer)
                 st.session_state.chat_messages.append({"role": "assistant", "content": answer})
             except Exception as e:
-                st.error(f"Erro na comunicação com a AWS Bedrock: {e}")
+                st.error(f"Erro na comunicação com o banco ou AWS: {e}")
