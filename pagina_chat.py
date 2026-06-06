@@ -63,9 +63,9 @@ def get_sql_agent():
     # Inicia o cliente Bedrock
     bedrock_client = boto3.client(
         service_name="bedrock-runtime",
-        region_name=st.secrets.get("aws_session_token", "us-east-1"),
-        aws_access_key_id=st.secrets["aws_access_key_id"],
-        aws_secret_access_key=st.secrets["aws_secret_access_key"],
+        region_name=st.secrets.get("AWS_SESSION_TOKEN", "us-east-1"),
+        aws_access_key_id=st.secrets["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=st.secrets["AWS_SECRET_ACCESS_KEY"],
     )
 
     # Configura o LLM com o Claude 3.5 Sonnet
@@ -104,7 +104,7 @@ def render_chat_page():
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    user_question = st.chat_input("Ex: Qual o valor gasto com cirurgia de mama em 2023?")
+    user_question = st.chat_input("Ex: Qual o valor total gasto por ano?")
     if user_question:
         st.session_state.chat_messages.append({"role": "user", "content": user_question})
         with st.chat_message("user"): 
