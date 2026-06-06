@@ -63,9 +63,9 @@ def get_sql_agent():
     # Inicia o cliente Bedrock
     bedrock_client = boto3.client(
         service_name="bedrock-runtime",
-        region_name=st.secrets.get("AWS_DEFAULT_REGION", "us-east-1"),
-        aws_access_key_id=st.secrets["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=st.secrets["AWS_SECRET_ACCESS_KEY"],
+        region_name=st.secrets.get("aws_session_token", "us-east-1"),
+        aws_access_key_id=st.secrets["aws_access_key_id"],
+        aws_secret_access_key=st.secrets["aws_secret_access_key"],
     )
 
     # Configura o LLM com o Claude 3.5 Sonnet
