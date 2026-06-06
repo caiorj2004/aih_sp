@@ -55,19 +55,28 @@ def get_sqlite_sql_database() -> SQLDatabase:
 def get_sql_agent():
     db = get_sqlite_sql_database() 
     
-    # Validação estrita: Lê EXCLUSIVAMENTE do painel de secrets do Streamlit
+    # Validação estrita
     if "AWS_ACCESS_KEY_ID" not in st.secrets or "AWS_SECRET_ACCESS_KEY" not in st.secrets:
         raise KeyError(
             "Credenciais da AWS ausentes. Por favor, adicione AWS_ACCESS_KEY_ID e "
             "AWS_SECRET_ACCESS_KEY no painel 'App settings > Secrets' do Streamlit Cloud."
         )
 
-    # Inicia o cliente Bedrock
+    # Coleta as credenciais básicas
+    aws_access_key = st.secrets["AWS_ACCESS_KEY_ID"]
+    aws_secret_key = st.secrets["AWS_SECRET_ACCESS_KEY"]
+    aws_region = st.secrets.get("AWS_DEFAULT_REGION", "us-east-1")
+    
+    # Coleta o Session Token (se existir no secrets)
+    aws_session_token = st.secrets.get("AWS_SESSION_TOKEN")
+
+    # Inicia o cliente Bedrock com o Session Token
     bedrock_client = boto3.client(
         service_name="bedrock-runtime",
-        region_name=st.secrets.get("AWS_SESSION_TOKEN", "us-east-1"),
-        aws_access_key_id=st.secrets["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=st.secrets["AWS_SECRET_ACCESS_KEY"],
+        region_name=aws_region,
+        aws_access_key_id=aws_access_key,
+        aws_secret_access_key=aws_secret_key,
+        aws_session_token=aws_session_token, # <- Adicionamos o token aqui!
     )
 
     # Configura o LLM com o Claude 3.5 Sonnet
@@ -105,7 +114,7 @@ def render_chat_page():
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    user_question = st.chat_input("Ex: Qual o valor gasto com cirurgia de mama em 2023?")
+    user_question = st.chat_input("Ex: Qual o valor total gasto por ano?")
     if user_question:
         st.session_state.chat_messages.append({"role": "user", "content": user_question})
         with st.chat_message("user"): 
