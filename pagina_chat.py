@@ -60,7 +60,7 @@ def get_database() -> SQLDatabase:
             
     except Exception as e:
         # Exibe um pequeno aviso para você saber exatamente por que o Postgres falhou, se falhar
-        print(f"Erro na conexão do Agente com o Postgres: {e}")
+        print(f"🚨 O Postgres falhou e o Agente caiu pro SQLite. Motivo exato: {e}")
         pass 
 
     # ==========================================================
