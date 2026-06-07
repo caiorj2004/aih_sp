@@ -18,7 +18,6 @@ _VL_FILE = _DATA_DIR / "aih_vl_fallback.parquet"
 _DIC_QTD_FILE = _DATA_DIR / "dicionario_qtd.csv"
 _DIC_VL_FILE = _DATA_DIR / "dicionario_vl.csv"
 
-@st.cache_resource
 def get_database() -> SQLDatabase:
     # 1. ESCUDO DE TOKENS (Serve para ambos os bancos)
     custom_info = {
@@ -91,7 +90,6 @@ def get_database() -> SQLDatabase:
 
     return SQLDatabase(engine_sqlite, custom_table_info=custom_info)
 
-@st.cache_resource
 def get_sql_agent():
     db = get_database()
     
