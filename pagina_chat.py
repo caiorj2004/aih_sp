@@ -31,42 +31,38 @@ def get_database() -> SQLDatabase:
     # TENTATIVA 1: BANCO DE DADOS PRINCIPAL (POSTGRESQL)
     # ==========================================================
     try:
-        if "connections" in st.secrets and "postgresql" in st.secrets["connections"]:
-            pg = st.secrets["connections"]["postgresql"]
-            
-            # Formata a senha para evitar erros com caracteres especiais (!, @, #)
-            pwd = urllib.parse.quote_plus(pg["password"])
-            pg_url = f"postgresql://{pg['username']}:{pwd}@{pg['host']}:{pg['port']}/{pg['database']}"
-            
-            engine_pg = create_engine(pg_url)
-            
-            # Testa a conexão
-            with engine_pg.connect() as conn:
-                pass # Se conectou, ótimo!
-            
-            # O agente precisa do 'dic_geral'. Se ele não existir no Postgres, criamos ele agora.
-            insp = inspect(engine_pg)
-            if not insp.has_table("dic_geral"):
-                dics = []
-                if _DIC_QTD_FILE.exists():
-                    df_q = pd.read_csv(_DIC_QTD_FILE)
-                    df_q['n'] = df_q['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
-                    df_q['s'] = df_q['Variável'].str.replace("qtd_", "", regex=False)
-                    dics.append(df_q[['n', 's']].dropna())
-                if _DIC_VL_FILE.exists():
-                    df_v = pd.read_csv(_DIC_VL_FILE)
-                    df_v['n'] = df_v['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
-                    df_v['s'] = df_v['Variável'].str.replace("vl_", "", regex=False)
-                    dics.append(df_v[['n', 's']].dropna())
-                if dics:
-                    pd.concat(dics).drop_duplicates().to_sql("dic_geral", engine_pg, index=False, if_exists="replace")
-            
-            # Retorna a conexão com Postgres
-            return SQLDatabase(engine_pg, custom_table_info=custom_info)
+        # Pega a mesma conexão nativa que já está funcionando no db.py!
+        conn_st = st.connection("postgresql", type="sql")
+        engine_pg = conn_st.engine
+        
+        # Testa a conexão
+        with engine_pg.connect() as check_conn:
+            pass 
+        
+        # O agente precisa do 'dic_geral'. Se ele não existir no Postgres, criamos ele agora.
+        insp = inspect(engine_pg)
+        if not insp.has_table("dic_geral"):
+            dics = []
+            if _DIC_QTD_FILE.exists():
+                df_q = pd.read_csv(_DIC_QTD_FILE)
+                df_q['n'] = df_q['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
+                df_q['s'] = df_q['Variável'].str.replace("qtd_", "", regex=False)
+                dics.append(df_q[['n', 's']].dropna())
+            if _DIC_VL_FILE.exists():
+                df_v = pd.read_csv(_DIC_VL_FILE)
+                df_v['n'] = df_v['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
+                df_v['s'] = df_v['Variável'].str.replace("vl_", "", regex=False)
+                dics.append(df_v[['n', 's']].dropna())
+            if dics:
+                pd.concat(dics).drop_duplicates().to_sql("dic_geral", engine_pg, index=False, if_exists="replace")
+        
+        # Retorna a conexão com Postgres para a IA
+        return SQLDatabase(engine_pg, custom_table_info=custom_info)
             
     except Exception as e:
-        print(f"PostgreSQL indisponível para o Agente IA. Acionando Fallback. Detalhe: {e}")
-        pass # Ignora o erro e continua o código para ativar o fallback
+        # Exibe um pequeno aviso para você saber exatamente por que o Postgres falhou, se falhar
+        print(f"Erro na conexão do Agente com o Postgres: {e}")
+        pass 
 
     # ==========================================================
     # TENTATIVA 2: FALLBACK (SQLITE EM MEMÓRIA COM PARQUET)
