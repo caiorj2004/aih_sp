@@ -19,14 +19,65 @@ _DIC_QTD_FILE = _DATA_DIR / "dicionario_qtd.csv"
 _DIC_VL_FILE = _DATA_DIR / "dicionario_vl.csv"
 
 @st.cache_resource
-def get_sqlite_sql_database() -> SQLDatabase:
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    
-    # 1. Carga de Dados
-    pd.read_parquet(_QTD_FILE).to_sql("aih_qtd", engine, index=False, if_exists="replace")
-    pd.read_parquet(_VL_FILE).to_sql("aih_vl", engine, index=False, if_exists="replace")
+def get_database() -> SQLDatabase:
+    # 1. ESCUDO DE TOKENS (Serve para ambos os bancos)
+    custom_info = {
+        "aih_qtd": "Tabela de quantidades. Use APENAS colunas: ano, mes, municipio e as colunas 'qtd_XXXX' que você descobrir via dic_geral.",
+        "aih_vl": "Tabela de valores (R$). Use APENAS colunas: ano, mes, municipio e as colunas 'vl_XXXX' que você descobrir via dic_geral.",
+        "dic_geral": "Dicionário. Colunas: n (nome do procedimento), s (sufixo do código)."
+    }
 
-    # 2. Unificação de Dicionários em uma tabela simples
+    # ==========================================================
+    # TENTATIVA 1: BANCO DE DADOS PRINCIPAL (POSTGRESQL)
+    # ==========================================================
+    try:
+        if "connections" in st.secrets and "postgresql" in st.secrets["connections"]:
+            pg = st.secrets["connections"]["postgresql"]
+            
+            # Formata a senha para evitar erros com caracteres especiais (!, @, #)
+            pwd = urllib.parse.quote_plus(pg["password"])
+            pg_url = f"postgresql://{pg['username']}:{pwd}@{pg['host']}:{pg['port']}/{pg['database']}"
+            
+            engine_pg = create_engine(pg_url)
+            
+            # Testa a conexão
+            with engine_pg.connect() as conn:
+                pass # Se conectou, ótimo!
+            
+            # O agente precisa do 'dic_geral'. Se ele não existir no Postgres, criamos ele agora.
+            insp = inspect(engine_pg)
+            if not insp.has_table("dic_geral"):
+                dics = []
+                if _DIC_QTD_FILE.exists():
+                    df_q = pd.read_csv(_DIC_QTD_FILE)
+                    df_q['n'] = df_q['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
+                    df_q['s'] = df_q['Variável'].str.replace("qtd_", "", regex=False)
+                    dics.append(df_q[['n', 's']].dropna())
+                if _DIC_VL_FILE.exists():
+                    df_v = pd.read_csv(_DIC_VL_FILE)
+                    df_v['n'] = df_v['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
+                    df_v['s'] = df_v['Variável'].str.replace("vl_", "", regex=False)
+                    dics.append(df_v[['n', 's']].dropna())
+                if dics:
+                    pd.concat(dics).drop_duplicates().to_sql("dic_geral", engine_pg, index=False, if_exists="replace")
+            
+            # Retorna a conexão com Postgres
+            return SQLDatabase(engine_pg, custom_table_info=custom_info)
+            
+    except Exception as e:
+        print(f"PostgreSQL indisponível para o Agente IA. Acionando Fallback. Detalhe: {e}")
+        pass # Ignora o erro e continua o código para ativar o fallback
+
+    # ==========================================================
+    # TENTATIVA 2: FALLBACK (SQLITE EM MEMÓRIA COM PARQUET)
+    # ==========================================================
+    engine_sqlite = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    
+    # Carga de Dados Parquet
+    pd.read_parquet(_QTD_FILE).to_sql("aih_qtd", engine_sqlite, index=False, if_exists="replace")
+    pd.read_parquet(_VL_FILE).to_sql("aih_vl", engine_sqlite, index=False, if_exists="replace")
+
+    # Carga do Dicionário
     dics = []
     if _DIC_QTD_FILE.exists():
         df_q = pd.read_csv(_DIC_QTD_FILE)
@@ -40,20 +91,13 @@ def get_sqlite_sql_database() -> SQLDatabase:
         dics.append(df_v[['n', 's']].dropna())
 
     if dics:
-        pd.concat(dics).drop_duplicates().to_sql("dic_geral", engine, index=False, if_exists="replace")
+        pd.concat(dics).drop_duplicates().to_sql("dic_geral", engine_sqlite, index=False, if_exists="replace")
 
-    # 3. ESCUDO DE TOKENS
-    custom_info = {
-        "aih_qtd": "Tabela de quantidades. Use APENAS colunas: ano, mes, municipio e as colunas 'qtd_XXXX' que você descobrir via dic_geral.",
-        "aih_vl": "Tabela de valores (R$). Use APENAS colunas: ano, mes, municipio e as colunas 'vl_XXXX' que você descobrir via dic_geral.",
-        "dic_geral": "Dicionário. Colunas: n (nome do procedimento), s (sufixo do código)."
-    }
-
-    return SQLDatabase(engine, custom_table_info=custom_info)
+    return SQLDatabase(engine_sqlite, custom_table_info=custom_info)
 
 @st.cache_resource
 def get_sql_agent():
-    db = get_sqlite_sql_database() 
+    db = get_database()
     
     # --- LINHA DE DEBUG ---
     # Isto vai imprimir na tela exatamente o que o Streamlit conseguiu ler do painel
