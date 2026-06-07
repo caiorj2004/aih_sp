@@ -99,9 +99,6 @@ def get_database() -> SQLDatabase:
 def get_sql_agent():
     db = get_database()
     
-    # --- LINHA DE DEBUG ---
-    # Isto vai imprimir na tela exatamente o que o Streamlit conseguiu ler do painel
-    st.error(f"Chaves que o app encontrou: {list(st.secrets.keys())}")
     # -------------------------------------------------------------------------
 
     # Validação estrita (CORRIGIDA - Sem os três pontinhos)
@@ -136,11 +133,12 @@ def get_sql_agent():
     )
 
     prefixo = (
-        "Você é um analista experiente. SIGA ESTA ORDEM E NÃO INVENTE COLUNAS:\n"
-        "1. SEMPRE procure o nome do procedimento na tabela 'dic_geral' usando LIKE para obter o sufixo 's'.\n"
-        "2. Se a pergunta pedir quantidade, use a coluna 'qtd_' + sufixo na tabela 'aih_qtd'.\n"
-        "3. Se a pergunta pedir valor/dinheiro, use a coluna 'vl_' + sufixo na tabela 'aih_vl'.\n"
-        "4. NUNCA tente listar as colunas de aih_qtd ou aih_vl, eu já te dei o padrão acima."
+        "Você é um analista de dados especialista no DATASUS. Seja o mais direto e eficiente possível, minimizando o número de consultas.\n\n"
+        "REGRAS DE ATALHO (SIGA RIGOROSAMENTE):\n"
+        "1. PERGUNTAS GERAIS: Se o usuário pedir o 'total', 'soma geral', ou não especificar um procedimento médico, NUNCA consulte a tabela dic_geral. Use DIRETAMENTE a coluna 'total' que já existe na tabela 'aih_qtd' (para quantidades) ou 'aih_vl' (para dinheiro/valores). Exemplo: SELECT ano, SUM(total) FROM aih_qtd GROUP BY ano.\n"
+        "2. PERGUNTAS ESPECÍFICAS: Apenas se o usuário citar um procedimento específico (ex: cirurgia, parto, raio-x), consulte a tabela 'dic_geral' usando a cláusula LIKE para descobrir o sufixo 's'.\n"
+        "3. Com o sufixo 's' em mãos, consulte a coluna 'qtd_' + sufixo (em aih_qtd) ou 'vl_' + sufixo (em aih_vl).\n"
+        "4. NUNCA tente somar dezenas de colunas ao mesmo tempo. Se a query ficar muito longa, você está fazendo do jeito errado."
     )
 
     return create_sql_agent(
