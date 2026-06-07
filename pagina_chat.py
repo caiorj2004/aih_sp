@@ -1,11 +1,12 @@
 import pathlib
+import urllib.parse
 import pandas as pd
 import streamlit as st
 import boto3
 from langchain_community.agent_toolkits import create_sql_agent
 from langchain_community.utilities import SQLDatabase
 from langchain_aws import ChatBedrock
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.pool import StaticPool
 from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
 
@@ -19,7 +20,7 @@ _DIC_QTD_FILE = _DATA_DIR / "dicionario_qtd.csv"
 _DIC_VL_FILE = _DATA_DIR / "dicionario_vl.csv"
 
 def get_database() -> SQLDatabase:
-    # 1. ESCUDO DE TOKENS (Serve para ambos os bancos)
+    # 1. ESCUDO DE TOKENS (Informações personalizadas das tabelas)
     custom_info = {
         "aih_qtd": "Tabela de quantidades. Use APENAS colunas: ano, mes, municipio e as colunas 'qtd_XXXX' que você descobrir via dic_geral.",
         "aih_vl": "Tabela de valores (R$). Use APENAS colunas: ano, mes, municipio e as colunas 'vl_XXXX' que você descobrir via dic_geral.",
@@ -27,52 +28,72 @@ def get_database() -> SQLDatabase:
     }
 
     # ==========================================================
-    # TENTATIVA 1: BANCO DE DADOS PRINCIPAL (POSTGRESQL)
+    # TENTATIVA 1: BANCO DE DADOS PRINCIPAL (POSTGRESQL SEGURO)
     # ==========================================================
-    try:
-        # Pega a mesma conexão nativa que já está funcionando no db.py!
-        conn_st = st.connection("postgresql", type="sql")
-        engine_pg = conn_st.engine
-        
-        # Testa a conexão
-        with engine_pg.connect() as check_conn:
-            pass 
-        
-        # O agente precisa do 'dic_geral'. Se ele não existir no Postgres, criamos ele agora.
-        insp = inspect(engine_pg)
-        if not insp.has_table("dic_geral"):
-            dics = []
-            if _DIC_QTD_FILE.exists():
-                df_q = pd.read_csv(_DIC_QTD_FILE)
-                df_q['n'] = df_q['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
-                df_q['s'] = df_q['Variável'].str.replace("qtd_", "", regex=False)
-                dics.append(df_q[['n', 's']].dropna())
-            if _DIC_VL_FILE.exists():
-                df_v = pd.read_csv(_DIC_VL_FILE)
-                df_v['n'] = df_v['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
-                df_v['s'] = df_v['Variável'].str.replace("vl_", "", regex=False)
-                dics.append(df_v[['n', 's']].dropna())
-            if dics:
-                pd.concat(dics).drop_duplicates().to_sql("dic_geral", engine_pg, index=False, if_exists="replace")
-        
-        # Retorna a conexão com Postgres para a IA
-        return SQLDatabase(engine_pg, custom_table_info=custom_info)
+    if "connections" in st.secrets and "postgresql" in st.secrets["connections"]:
+        try:
+            pg = st.secrets["connections"]["postgresql"]
             
-    except Exception as e:
-        # Exibe um pequeno aviso para você saber exatamente por que o Postgres falhou, se falhar
-        print(f"🚨 O Postgres falhou e o Agente caiu pro SQLite. Motivo exato: {e}")
-        pass 
+            # Sanitiza a senha para evitar que caracteres especiais (@, :, /) quebrem a URL de conexão
+            pwd = urllib.parse.quote_plus(str(pg["password"]))
+            username = pg["username"]
+            host = pg["host"]
+            port = pg["port"]
+            database = pg["database"]
+            
+            # Monta a URL explicitando o driver +psycopg2 para o SQLAlchemy
+            pg_url = f"postgresql+psycopg2://{username}:{pwd}@{host}:{port}/{database}"
+            
+            # Cria a engine isolada para o LangChain
+            engine_pg = create_engine(
+                pg_url,
+                pool_pre_ping=True,  # Evita quedas por conexões inativas
+                pool_recycle=1800    # Recicla conexões a cada 30 minutos
+            )
+            
+            # Testa se a conexão está realmente ativa
+            with engine_pg.connect() as check_conn:
+                pass 
+            
+            # Verifica se a tabela 'dic_geral' existe. Se não, tenta criar.
+            insp = inspect(engine_pg)
+            if not insp.has_table("dic_geral"):
+                dics = []
+                # Utiliza os caminhos das constantes mapeadas no seu arquivo para carregar os csvs
+                if _DIC_QTD_FILE.exists():
+                    df_q = pd.read_csv(_DIC_QTD_FILE)
+                    df_q['n'] = df_q['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
+                    df_q['s'] = df_q['Variável'].str.replace("qtd_", "", regex=False)
+                    dics.append(df_q[['n', 's']].dropna())
+                if _DIC_VL_FILE.exists():
+                    df_v = pd.read_csv(_DIC_VL_FILE)
+                    df_v['n'] = df_v['Descrição'].str.extract(r"^\w+\s*.\s*\d+\s*(.*)")[0]
+                    df_v['s'] = df_v['Variável'].str.replace("vl_", "", regex=False)
+                    dics.append(df_v[['n', 's']].dropna())
+                
+                if dics:
+                    # Se falhar por falta de permissão de escrita (CREATE TABLE), o try/except vai capturar e ir para o fallback
+                    pd.concat(dics).drop_duplicates().to_sql("dic_geral", engine_pg, index=False, if_exists="replace")
+            
+            # Retorna com sucesso a instância do PostgreSQL para o Agente
+            return SQLDatabase(engine_pg, custom_table_info=custom_info)
+                
+        except Exception as e:
+            # Exibe amigavelmente o erro técnico na tela para monitoramento
+            st.warning(f"⚠️ Nota: O agente não pôde usar o PostgreSQL direto (Motivo: {e}). Utilizando cópia local estável.")
 
     # ==========================================================
-    # TENTATIVA 2: FALLBACK (SQLITE EM MEMÓRIA COM PARQUET)
+    # TENTATIVA 2: FALLBACK SEGURO (SQLITE EM MEMÓRIA)
     # ==========================================================
+    from sqlalchemy.pool import StaticPool
     engine_sqlite = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     
-    # Carga de Dados Parquet
-    pd.read_parquet(_QTD_FILE).to_sql("aih_qtd", engine_sqlite, index=False, if_exists="replace")
-    pd.read_parquet(_VL_FILE).to_sql("aih_vl", engine_sqlite, index=False, if_exists="replace")
+    # Carga dos dados locais do Parquet para o SQLite de contingência
+    if _QTD_FILE.exists() and _VL_FILE.exists():
+        pd.read_parquet(_QTD_FILE).to_sql("aih_qtd", engine_sqlite, index=False, if_exists="replace")
+        pd.read_parquet(_VL_FILE).to_sql("aih_vl", engine_sqlite, index=False, if_exists="replace")
 
-    # Carga do Dicionário
+    # Reconstrução do dicionário local
     dics = []
     if _DIC_QTD_FILE.exists():
         df_q = pd.read_csv(_DIC_QTD_FILE)
