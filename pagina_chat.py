@@ -110,7 +110,6 @@ def get_sql_agent():
     )
 
 def render_chat_page():
-    def render_chat_page():
     st.subheader("🤖 Assistente Virtual DATASUS")
     
     # Texto de introdução e guia de uso
