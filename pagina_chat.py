@@ -110,7 +110,29 @@ def get_sql_agent():
     )
 
 def render_chat_page():
-    st.subheader("🤖 Assistente DATASUS (AWS Bedrock)")
+    def render_chat_page():
+    st.subheader("🤖 Assistente Virtual DATASUS")
+    
+    # Texto de introdução e guia de uso
+    st.markdown("""
+    Bem-vindo ao Assistente Inteligente de Dados de Autorização de Internação Hospitalar! 
+    
+    Este agente utiliza Inteligência Artificial para traduzir suas perguntas em linguagem natural diretamente em consultas ao nosso banco de dados com os dados DATASUS. Com ele, você pode perguntar sobre os dados de **quantidades** e **valores** de procedimentos hospitalares de forma rápida.
+
+    ### 📖 Como extrair o melhor do Assistente?
+    Para que a Inteligência Artificial traga resultados precisos, ela precisa identificar o nome correto do procedimento médico que você deseja analisar. 
+    
+    👉 **Recomendação de Ouro:** Antes de perguntar, visite a página **Lista dos Dados Armazenados**. Lá você encontrará o nosso dicionário completo. Copie o nome do procedimento (ex: *Diagnóstico em laboratório clínico*, *Cirurgia de Mama*, *Anestesiologia*) e use-o na sua pergunta.
+
+    ### 💡 Exemplos de Perguntas
+    Seja específico quanto ao que deseja (quantidade ou valor) e o período:
+    * *"Qual foi o valor total gasto com [NOME DO PROCEDIMENTO] no ano de 2023?"*
+    * *"Mostre a quantidade de internações para [NOME DO PROCEDIMENTO] realizadas em 2022."*
+    * *"Qual município teve o maior gasto com [NOME DO PROCEDIMENTO]?"*
+
+    ---
+    *Nota: Consultas mais amplas ou cruzamentos complexos podem levar alguns segundos a mais, pois o agente criará as fórmulas matemáticas em tempo real para te responder.*
+    """)
     
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
