@@ -1,0 +1,55 @@
+﻿Variável,Descrição
+vl_0101,Vl – 0101 Ações coletivas/individuais em saúde
+vl_0201,Vl – 0201 Coleta de material
+vl_0202,Vl – 0202 Diagnóstico em laboratório clínico
+vl_0203,Vl – 0203 Diagnóstico por anatomia patológica e citopatologia
+vl_0204,Vl – 0204 Diagnóstico por radiologia
+vl_0205,Vl – 0205 Diagnóstico por ultrassonografia
+vl_0206,Vl – 0206 Diagnóstico por tomografia
+vl_0207,Vl – 0207 Diagnóstico por ressonância magnética
+vl_0208,Vl – 0208 Diagnóstico por medicina nuclear in vivo
+vl_0209,Vl – 0209 Diagnóstico por endoscopia
+vl_0210,Vl – 0210 Diagnóstico por radiologia intervencionista
+vl_0211,Vl – 0211 Métodos diagnósticos em especialidades
+vl_0212,Vl – 0212 Diagnóstico e procedimentos especiais em hemoterapia
+vl_0213,Vl – 0213 Diagnóstico em vigilância epidemiológica e ambiental
+vl_0214,Vl – 0214 Diagnóstico por teste rápido
+vl_0301,Vl – 0301 Consultas / Atendimentos / Acompanhamentos
+vl_0302,Vl – 0302 Fisioterapia
+vl_0303,Vl – 0303 Tratamentos clínicos (outras especialidades)
+vl_0304,Vl – 0304 Tratamento em oncologia
+vl_0305,Vl – 0305 Tratamento em nefrologia
+vl_0306,Vl – 0306 Hemoterapia
+vl_0307,Vl – 0307 Tratamentos odontológicos
+vl_0308,"Vl – 0308 Tratamento de lesões, envenenamentos e outros, decorrentes de causas externas"
+vl_0309,Vl – 0309 Terapias especializadas
+vl_0310,Vl – 0310 Parto e nascimento
+vl_0311,Vl – 0311 Cuidados paliativos
+vl_0401,"Vl – 0401 Pequenas cirurgias e cirurgias de pele, tecido subcutâneo e mucosa"
+vl_0402,Vl – 0402 Cirurgia de glândulas endócrinas
+vl_0403,Vl – 0403 Cirurgia do sistema nervoso central e periférico
+vl_0404,"Vl – 0404 Cirurgia das vias aéreas superiores, da face, da cabeça e do pescoço"
+vl_0405,Vl – 0405 Cirurgia do aparelho da visão
+vl_0406,Vl – 0406 Cirurgia do aparelho circulatório
+vl_0407,"Vl – 0407 Cirurgia do aparelho digestivo, órgãos anexos e parede abdominal"
+vl_0408,Vl – 0408 Cirurgia do sistema osteomuscular
+vl_0409,Vl – 0409 Cirurgia do aparelho geniturinário
+vl_0410,Vl – 0410 Cirurgia de mama
+vl_0411,Vl – 0411 Cirurgia obstétrica
+vl_0412,Vl – 0412 Cirurgia torácica
+vl_0413,Vl – 0413 Cirurgia reparadora
+vl_0414,Vl – 0414 Bucomaxilofacial
+vl_0415,Vl – 0415 Outras cirurgias
+vl_0416,Vl – 0416 Cirurgia em oncologia
+vl_0417,Vl – 0417 Anestesiologia
+vl_0418,Vl – 0418 Cirurgia em nefrologia
+vl_0501,"Vl – 0501 Coleta e exames para fins de doação de órgãos, tecidos e células e de transplante"
+vl_0502,Vl – 0502 Avaliação de morte encefálica
+vl_0503,Vl – 0503 Ações relacionadas à doação de órgãos e tecidos para transplante
+vl_0504,Vl – 0504 Processamento de tecidos para transplante
+vl_0505,"Vl – 0505 Transplante de órgãos, tecidos e células"
+vl_0506,Vl – 0506 Acompanhamento e intercorrências no pré e pós-transplante
+vl_0603,Vl – 0603 Medicamentos de âmbito hospitalar e urgência
+vl_0702,"Vl – 0702 Órteses, próteses e materiais especiais relacionados ao ato cirúrgico"
+vl_0801,Vl – 0801 Ações relacionadas ao estabelecimento
+vl_0802,Vl – 0802 Ações relacionadas ao atendimento
