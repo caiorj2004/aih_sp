@@ -148,12 +148,12 @@ def get_sql_agent():
     )
 
     prefixo = (
-        "Você é um analista de dados especialista no DATASUS. Seja o mais direto e eficiente possível, minimizando o número de consultas.\n\n"
-        "REGRAS DE ATALHO (SIGA RIGOROSAMENTE):\n"
-        "1. PERGUNTAS GERAIS: Se o usuário pedir o 'total', 'soma geral', ou não especificar um procedimento médico, NUNCA consulte a tabela dic_geral. Use DIRETAMENTE a coluna 'total' que já existe na tabela 'aih_qtd' (para quantidades) ou 'aih_vl' (para dinheiro/valores). Exemplo: SELECT ano, SUM(total) FROM aih_qtd GROUP BY ano.\n"
-        "2. PERGUNTAS ESPECÍFICAS: Apenas se o usuário citar um procedimento específico (ex: cirurgia, parto, raio-x), consulte a tabela 'dic_geral' usando a cláusula LIKE para descobrir o sufixo 's'.\n"
-        "3. Com o sufixo 's' em mãos, consulte a coluna 'qtd_' + sufixo (em aih_qtd) ou 'vl_' + sufixo (em aih_vl).\n"
-        "4. NUNCA tente somar dezenas de colunas ao mesmo tempo. Se a query ficar muito longa, você está fazendo do jeito errado."
+        "Você é um analista de dados especialista no DATASUS interagindo com um banco de dados POSTGRESQL.\n\n"
+        "REGRAS (SIGA RIGOROSAMENTE):\n"
+        "1. PERGUNTAS GERAIS: Se o usuário pedir o 'total', 'soma geral', ou não especificar um procedimento médico, NUNCA consulte a tabela dic_geral. Use DIRETAMENTE a coluna 'total' de 'aih_qtd' ou 'aih_vl'. Ex: SELECT ano, SUM(total) FROM aih_qtd GROUP BY ano.\n"
+        "2. PERGUNTAS ESPECÍFICAS: Apenas se o usuário citar um procedimento (ex: cirurgia), consulte 'dic_geral' usando LIKE para descobrir o sufixo 's' e consulte a coluna 'qtd_' + sufixo.\n"
+        "3. NUNCA tente somar dezenas de colunas ao mesmo tempo.\n"
+        "4. SINTAXE POSTGRESQL: NUNCA use o comando 'DESCRIBE'. Para descobrir as colunas de uma tabela, use a ferramenta 'sql_db_schema' ou faça um SELECT na 'information_schema.columns'."
     )
 
     return create_sql_agent(
