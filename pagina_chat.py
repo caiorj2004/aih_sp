@@ -6,7 +6,8 @@ import boto3
 from langchain_community.agent_toolkits import create_sql_agent
 from langchain_community.utilities import SQLDatabase
 from langchain_aws import ChatBedrock
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
+import datetime
 from sqlalchemy.pool import StaticPool
 from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
 
@@ -174,6 +175,50 @@ def get_sql_agent():
         verbose=False
     )
 
+def salvar_log_interacao(pergunta: str, resposta: str):
+    """Salva o que o usuário perguntou e o que a IA respondeu."""
+    agora = datetime.datetime.now()
+    
+    # 1. Tenta salvar no PostgreSQL de forma isolada e segura
+    if "connections" in st.secrets and "postgresql" in st.secrets["connections"]:
+        try:
+            pg = st.secrets["connections"]["postgresql"]
+            pwd = urllib.parse.quote_plus(str(pg["password"]))
+            pg_url = f"postgresql+psycopg2://{pg['username']}:{pwd}@{pg['host']}:{pg['port']}/{pg['database']}"
+            
+            engine_log = create_engine(pg_url)
+            
+            # Usamos engine.begin() para garantir o commit (salvamento) automático no banco
+            with engine_log.begin() as conn:
+                # Cria a tabela se ela ainda não existir
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS agente_logs (
+                        id SERIAL PRIMARY KEY,
+                        data_hora TIMESTAMP,
+                        pergunta TEXT,
+                        resposta TEXT
+                    )
+                """))
+                # Insere a pergunta e a resposta
+                conn.execute(text("""
+                    INSERT INTO agente_logs (data_hora, pergunta, resposta)
+                    VALUES (:dh, :p, :r)
+                """), {"dh": agora, "p": pergunta, "r": resposta})
+            return  # Sai da função pois salvou com sucesso no Postgres
+        except Exception as e:
+            print(f"Não foi possível salvar o log no Postgres: {e}")
+
+    # 2. Fallback: Se o banco falhar, salva num arquivo .csv local para não perder o log
+    try:
+        with open("logs_agente_datasus.csv", "a", encoding="utf-8") as f:
+            # Limpa quebras de linha para não corromper o formato
+            p_limpa = pergunta.replace('\n', ' ')
+            r_limpa = resposta.replace('\n', ' ')
+            dh_str = agora.strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"{dh_str}|{p_limpa}|{r_limpa}\n")
+    except:
+        pass
+
 def render_chat_page():
     st.subheader("🤖 Assistente Virtual DATASUS")
     
@@ -215,9 +260,22 @@ def render_chat_page():
             st_callback = StreamlitCallbackHandler(st.container(), expand_new_thoughts=False)
             try:
                 agent = get_sql_agent()
-                result = agent.invoke({"input": user_question}, {"callbacks": [st_callback]})
-                answer = result.get("output", "Não consegui extrair os dados.")
+                
+                # O agente pensa e gera a resposta
+                result = agent.invoke({"input": prompt}, {"callbacks": [st_callback]})
+                answer = result.get("output", "Desculpe, não consegui encontrar a resposta.")
+                
+                # Exibe na tela
                 st.markdown(answer)
                 st.session_state.chat_messages.append({"role": "assistant", "content": answer})
+                
+                # ---> MÁGICA ACONTECE AQUI: Salva o Log com Sucesso! <---
+                salvar_log_interacao(prompt, answer)
+
             except Exception as e:
-                st.error(f"Erro na comunicação com o banco ou AWS: {e}")
+                # Se der algum erro (ex: IA não soube responder, banco caiu, etc)
+                erro_msg = f"Infelizmente, ocorreu um erro ao buscar os dados. Tente reformular a pergunta."
+                st.error(erro_msg)
+                
+                # ---> Salva o Log do erro para você poder consertar depois! <---
+                salvar_log_interacao(prompt, f"ERRO: {e}")
