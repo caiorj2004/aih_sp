@@ -76,7 +76,11 @@ def get_database() -> SQLDatabase:
                     pd.concat(dics).drop_duplicates().to_sql("dic_geral", engine_pg, index=False, if_exists="replace")
             
             # Retorna com sucesso a instância do PostgreSQL para o Agente
-            return SQLDatabase(engine_pg, custom_table_info=custom_info)
+            return SQLDatabase(
+                engine_pg, 
+                include_tables=["aih_qtd", "aih_vl", "dic_geral"],
+                custom_table_info=custom_info
+            )
                 
         except Exception as e:
             # Exibe amigavelmente o erro técnico na tela para monitoramento
@@ -109,7 +113,11 @@ def get_database() -> SQLDatabase:
     if dics:
         pd.concat(dics).drop_duplicates().to_sql("dic_geral", engine_sqlite, index=False, if_exists="replace")
 
-    return SQLDatabase(engine_sqlite, custom_table_info=custom_info)
+    return SQLDatabase(
+        engine_sqlite, 
+        include_tables=["aih_qtd", "aih_vl", "dic_geral"],
+        custom_table_info=custom_info
+    )
 
 def get_sql_agent():
     db = get_database()
