@@ -270,7 +270,7 @@ def render_chat_page():
                 st.session_state.chat_messages.append({"role": "assistant", "content": answer})
                 
                 # ---> MÁGICA ACONTECE AQUI: Salva o Log com Sucesso! <---
-                salvar_log_interacao(prompt, answer)
+                salvar_log_interacao(user_question, answer)
 
             except Exception as e:
                 # Se der algum erro (ex: IA não soube responder, banco caiu, etc)
