@@ -137,8 +137,8 @@ COLUMN_LABELS: dict = {
     "total": "Totalizador do período",
     "total_qtd": "Total de Procedimentos (Qtd)",
     "total_vl": "Valor Total Repassado (R$)",
-    **{f"qtd_{code}": f"Qtd – {code} {name}" for code, name in _PROC_NAMES.items()},
-    **{f"vl_{code}": f"Vl – {code} {name}" for code, name in _PROC_NAMES.items()},
+    **{f"qtd_{code}": f"Qtd – {name}" for code, name in _PROC_NAMES.items()},
+    **{f"vl_{code}": f"Vl – {name}" for code, name in _PROC_NAMES.items()},
 }
 
 
