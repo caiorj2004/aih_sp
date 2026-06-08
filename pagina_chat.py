@@ -262,7 +262,7 @@ def render_chat_page():
                 agent = get_sql_agent()
                 
                 # O agente pensa e gera a resposta
-                result = agent.invoke({"input": prompt}, {"callbacks": [st_callback]})
+                result = agent.invoke({"input": user_question}, {"callbacks": [st_callback]})
                 answer = result.get("output", "Desculpe, não consegui encontrar a resposta.")
                 
                 # Exibe na tela
