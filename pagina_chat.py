@@ -278,4 +278,4 @@ def render_chat_page():
                 st.error(erro_msg)
                 
                 # ---> Salva o Log do erro para você poder consertar depois! <---
-                salvar_log_interacao(prompt, f"ERRO: {e}")
+                salvar_log_interacao(user_question, f"ERRO: {e}")
