@@ -427,6 +427,7 @@ with st.sidebar:
 
         # 2. FORMULÁRIO UNIFICADO (Modo Online)
         with st.form("sidebar_filters_db"):
+			default_year = _years[-1:] if _years else []
             selected_years = st.multiselect("Ano", options=_years, default=_years)
             selected_months = st.multiselect("Mês", options=_months, default=_months)
             selected_uf_labels = st.multiselect(
