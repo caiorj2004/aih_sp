@@ -427,8 +427,8 @@ with st.sidebar:
 
         # 2. FORMULÁRIO UNIFICADO (Modo Online)
         with st.form("sidebar_filters_db"):
-			default_year = _years[-1:] if _years else []
-            selected_years = st.multiselect("Ano", options=_years, default=_years)
+            default_year = _years[-1:] if _years else []
+            selected_years = st.multiselect("Ano", options=_years, default=default_year)
             selected_months = st.multiselect("Mês", options=_months, default=_months)
             selected_uf_labels = st.multiselect(
                 "Unidade da Federação (UF)",
@@ -588,7 +588,7 @@ with tab_raw:
                     continue
                 _decimals = 2 if (_col.startswith("vl_") or _col == "total_vl") else 0
                 _df_display_fmt[_col] = _df_display_fmt[_col].apply(br_format, decimals=_decimals)
-            st.dataframe(_df_display_fmt, use_container_width=True)
+            st.dataframe(_df_display_fmt, width="stretch")
 
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False)
@@ -614,19 +614,19 @@ with tab_raw:
             st.caption("**Colunas de controle e metadados** (comuns às duas matrizes)")
             st.dataframe(
                 pd.DataFrame(_meta_ctrl),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
             st.caption("**Matriz de Quantidades** (`aih_qtd`) — colunas `qtd_*`")
             st.dataframe(
                 pd.DataFrame(_meta_qtd),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
             st.caption("**Matriz de Valores Financeiros** (`aih_vl`) — colunas `vl_*`")
             st.dataframe(
                 pd.DataFrame(_meta_vl),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -682,7 +682,7 @@ with tab_kpis:
             
             _stats_display = _base.join(_extra).map(lambda v: br_format(v, 2))
             _stats_display.index = [col_label(c) for c in _stats_display.index]
-            st.dataframe(_stats_display, width="stretch") # Substituído use_container_width
+            st.dataframe(_stats_display, width="stretch")
 
             st.markdown("**Indicadores de referência do recorte atual:**")
             if _using_fallback:
@@ -799,7 +799,7 @@ with tab_charts:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
-            st.plotly_chart(fig_qtd, use_container_width=True)
+            st.plotly_chart(fig_qtd, width="stretch")
 
             # 2. Evolução do valor dos procedimentos
             st.subheader("2) Evolução do valor dos procedimentos")
@@ -839,14 +839,12 @@ with tab_charts:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
-            st.plotly_chart(fig_vl, use_container_width=True)
+            st.plotly_chart(fig_vl, width="stretch")
 			
-# 3. Ranking Top 10
+            # 3. Ranking Top 10
             st.subheader("3) Ranking Top 10")
             st.caption("ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município.")
             
-            # --- CORREÇÃO DE PROTEÇÃO CONTRA KEYERROR 'uf_nome' ---
-            # Verifica se temos a coluna de UF disponível no DataFrame atual
             has_uf_col = "uf_nome" in df_all.columns
 
             if _using_fallback:
@@ -866,17 +864,14 @@ with tab_charts:
                 key="rank_metric",
             )
 
-            # Lógica de agrupamento com fallback de segurança para cat_col
             if rank_level == "UF" and has_uf_col:
                 cat_col = "uf_nome"
             else:
-                # Fallback para município_nome ou a primeira coluna disponível
                 if "municipio_nome" in df_all.columns:
                     cat_col = "municipio_nome"
                 else:
                     cat_col = df_all.columns[0]
 
-            # Executa o agrupamento de forma segura
             ranking = (
                 df_all.groupby(cat_col, as_index=False)[rank_metric]
                 .sum()
@@ -892,9 +887,9 @@ with tab_charts:
                 text_auto=True,
             )
             fig_rank.update_layout(xaxis_tickangle=-40)
-            st.plotly_chart(fig_rank, width="stretch") # Corrigido use_container_width
+            st.plotly_chart(fig_rank, width="stretch")
 
-# 3. Scatter Plot
+            # 4. Scatter Plot
             st.subheader("4) Scatter Plot")
             st.caption("ℹ️ Este gráfico sempre inclui todos os municípios, independentemente do filtro de município.")
             sc_c1, sc_c2, sc_c3 = st.columns(3)
@@ -920,24 +915,17 @@ with tab_charts:
                     key="corr_method",
                 )
 
-            # --- LÓGICA DE AGRUPAMENTO DINÂMICA (CORREÇÃO DE KEYERROR) ---
-            # Garante que scatter_x e scatter_y existem no df_all antes de qualquer
-            # operação. O session_state do Streamlit pode conter um valor de
-            # reexecução anterior que não está mais disponível (ex.: ao trocar o
-            # radio de correlação com filtros diferentes ativos).
             if scatter_x not in df_all.columns:
                 scatter_x = "total_qtd" if "total_qtd" in df_all.columns else df_all.columns[0]
             if scatter_y not in df_all.columns:
                 scatter_y = "total_vl" if "total_vl" in df_all.columns else df_all.columns[0]
 
-            # Define colunas de agrupamento seguras
             group_cols = []
             if 'cod_municipio' in df_all.columns:
                 group_cols.append('cod_municipio')
             if 'municipio_nome' in df_all.columns:
                 group_cols.append('municipio_nome')
 
-            # Tenta incluir UF para o detalhamento (hover), mas protege contra ausência
             hover_fields = ["municipio_nome"] if "municipio_nome" in df_all.columns else []
             if 'uf_nome' in df_all.columns:
                 group_cols.append('uf_nome')
@@ -945,14 +933,12 @@ with tab_charts:
             elif 'uf_codigo' in df_all.columns:
                 group_cols.append('uf_codigo')
 
-            # Executa o agrupamento — colunas de métrica validadas acima
             scatter_df = (
                 df_all.groupby(group_cols, as_index=False)[[scatter_x, scatter_y]]
                 .sum()
                 .sort_values(scatter_y, ascending=False)
             )
 
-            # Criação do gráfico
             fig_scatter = px.scatter(
                 scatter_df,
                 x=scatter_x, y=scatter_y,
@@ -962,14 +948,9 @@ with tab_charts:
             
             st.plotly_chart(fig_scatter, width="stretch")
 
-            # Cálculo da Correlação
-            # Força coerção numérica para evitar TypeError no pandas 3.x quando
-            # colunas têm dtype object ou contêm NA residual.
             _CORR_METHOD_MAP = {"Pearson": "pearson", "Spearman": "spearman"}
             _cm = _CORR_METHOD_MAP[corr_method]
 
-            # Limita a amostra para o cálculo de correlação (evita crash por OOM
-            # ao selecionar todas as UFs com Pearson em datasets muito grandes).
             _CORR_SAMPLE_LIMIT = 5_000
             _corr_source = scatter_df
             if len(scatter_df) > _CORR_SAMPLE_LIMIT:
@@ -981,7 +962,6 @@ with tab_charts:
 
             _x_series = pd.to_numeric(_corr_source[scatter_x], errors="coerce").dropna()
             _y_series = pd.to_numeric(_corr_source[scatter_y], errors="coerce").dropna()
-            # Alinha os índices após dropna para garantir mesmo tamanho
             _common_idx = _x_series.index.intersection(_y_series.index)
             _x_series = _x_series.loc[_common_idx]
             _y_series = _y_series.loc[_common_idx]
@@ -1013,7 +993,7 @@ with tab_charts:
                 """
             )
 
-            # 4. Treemap — Distribuição por categorias de procedimento
+            # 5. Treemap — Distribuição por categorias de procedimento
             st.subheader("5) Treemap — Distribuição por categorias de procedimento")
             treemap_mode = st.selectbox(
                 "Analisar categorias de",
@@ -1033,7 +1013,6 @@ with tab_charts:
                     key="treemap_cols",
                 )
                 if treemap_selected:
-                    # Compute totals for ALL columns so percentages are relative to the full total
                     all_col_totals = (
                         df[available_cols]
                         .apply(pd.to_numeric, errors="coerce")
@@ -1063,13 +1042,13 @@ with tab_charts:
                         textinfo="label+percent root",
                         hovertemplate="<b>%{label}</b><br>Valor: %{customdata[0]}<br>%{percentRoot:.1%}<extra></extra>",
                     )
-                    st.plotly_chart(fig_treemap, use_container_width=True)
+                    st.plotly_chart(fig_treemap, width="stretch")
                 else:
                     st.info("Selecione ao menos uma coluna para exibir o treemap.")
             else:
                 st.info("Não foram encontradas colunas de categorias de procedimento no recorte atual.")
 
-            # 5. Heatmap Sazonal
+            # 6. Heatmap Sazonal
             st.subheader("6) Heatmap Sazonal")
             st.caption(
                 "Mapa de calor mês × ano (ou mês × UF) para identificar sazonalidade e quebras de padrão histórico.\n\n"
@@ -1104,7 +1083,6 @@ with tab_charts:
                 lambda n: _MONTH_ABBR_PT[n - 1] if 1 <= n <= 12 else str(n)
             )
 
-            # Valida hm_metric contra colunas reais do df (session_state pode estar stale)
             if hm_metric not in _hm_df.columns:
                 hm_metric = "total_qtd" if "total_qtd" in _hm_df.columns else "total_vl"
 
@@ -1118,7 +1096,6 @@ with tab_charts:
                 .sum()
                 .pivot_table(index=_hm_group_col, columns="_mes_num", values=hm_metric, aggfunc="sum")
             )
-            # Ensure full 12-column month order; fill missing months with 0
             _hm_pivot = _hm_pivot.reindex(columns=range(1, 13), fill_value=0)
             _hm_pivot.columns = _MONTH_ABBR_PT
 
@@ -1139,7 +1116,7 @@ with tab_charts:
                 yaxis=dict(type="category"),
                 margin=dict(l=10, r=10, t=20, b=10),
             )
-            st.plotly_chart(fig_heatmap, use_container_width=True)
+            st.plotly_chart(fig_heatmap, width="stretch")
 
 # ── 🤖 Assistente IA (Text-to-SQL) ─────────────────────────────────────────
 with tab_chat:
