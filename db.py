@@ -396,6 +396,9 @@ def load_consolidated_data(
         CAST(alias."col_real" AS FLOAT8) AS "alias_canonico"
     onde alias_canonico tem sempre o prefixo qtd_/vl_ esperado pelo app.py.
     """
+    if not selected_years or not selected_months:
+        return pd.DataFrame()
+        
     try:
         conn = get_connection()
         mapping = get_dimension_mapping()
@@ -483,6 +486,8 @@ def get_period_totals(
     selected_ufs: Tuple[str, ...],
     selected_municipios: Tuple[str, ...],
 ) -> Tuple[float, float]:
+    if not year or not month:
+        return 0.0, 0.0
     """
     Retorna (total_qtd, total_vl) agregados para um período específico.
     Usado no cálculo dos deltas dos KPIs.
