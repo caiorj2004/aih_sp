@@ -87,25 +87,21 @@ def _coerce_numeric_proc_cols(df: pd.DataFrame, prefixes: Tuple[str, ...]) -> pd
     """
     Converte para float todas as colunas cujo nome começa com qualquer um dos
     prefixos fornecidos (ex.: 'qtd_', 'vl_', 'total').
-
-    Os arquivos Parquet gerados a partir do DATASUS/TabNet podem conter hífens
-    ('-') representando zeros e vírgulas (',') como separadores decimais.
-    Esta função normaliza esses valores antes da coerção numérica, espelhando
-    o tratamento feito via CAST(... AS FLOAT8) nas consultas do db.py.
     """
-    for col in df.columns:
-        if col.startswith(prefixes):
-            df[col] = (
-                df[col]
-                .astype(str)
-                .str.strip()
-                # Hífen isolado representa zero no TabNet
-                .str.replace(r"^\s*-\s*$", "0", regex=True)
-                # Vírgula como separador decimal → ponto
-                .str.replace(",", ".", regex=False)
-            )
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
-    return df
+    df = df.copy()
+    cols_to_convert = [col for col in df.columns if col.startswith(prefixes)]
+    
+    for col in cols_to_convert:
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.strip()
+            .str.replace(r"^\s*-\s*$", "0", regex=True)
+            .str.replace(",", ".", regex=False)
+        )
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        
+    return df.copy() # Desfragmenta a memória após alterar dezenas de colunas em lote
 
 
 def load_fallback_consolidated(
