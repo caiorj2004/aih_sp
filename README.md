@@ -14,7 +14,7 @@ O SIH/SUS (Sistema de Informações Hospitalares) registra os procedimentos hosp
 
 3. **Produção em PostgreSQL** — as matrizes consolidadas `aih_qtd` e `aih_vl` são migradas para o banco do IESB com tipagem forte (`CHAR`, `INTEGER`, `NUMERIC(20,4)`). O módulo `db.py` gerencia a conexão via `SQLAlchemy`, utiliza CTEs recursivas (*loose index scan*) para varredura eficiente dos índices e aplica `st.cache_data` para minimizar round-trips.
 
-4. **Dashboard Streamlit** — interface com quatro abas, filtros hierárquicos (Ano → Mês → UF → Município) e um mecanismo de *fallback* automático para arquivos Parquet locais caso a conexão com o banco falhe.
+4. **Dashboard Streamlit** — interface com quatro abas, filtros hierárquicos (Ano → Mês → UF → Município) e um mecanismo de *fallback* automático para arquivos Parquet locais caso a conexão com o banco falhe. O dashboard está disponível em https://cyurdu4dy3ksuvvs9rlwbj.streamlit.app/ .
 
 ---
 
