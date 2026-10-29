@@ -1,4 +1,4 @@
-# aih_sp — Dashboard AIH SUS 📊
+# aih_sus — Dashboard AIH SUS 📊
 
 Dashboard interativo construído com **Streamlit** para análise das **Autorizações de Internação Hospitalar (AIH)** disponibilizadas pelo DATASUS/Ministério da Saúde. O projeto cobre toda a cadeia — da extração automatizada dos dados brutos até a visualização em produção — e foi desenvolvido como trabalho acadêmico no IESB.
 
@@ -38,7 +38,7 @@ O SIH/SUS (Sistema de Informações Hospitalares) registra os procedimentos hosp
 ## Estrutura do projeto
 
 ```
-aih_sp/
+aih_sus/
 ├── app.py                     # Interface Streamlit (UI principal)
 ├── db.py                      # Conexão e consultas ao PostgreSQL (cache, CTEs)
 ├── fallback.py                # Carregamento offline via Parquet
