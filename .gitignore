@@ -1,0 +1,23 @@
+# Secrets locais do Streamlit
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Ambientes
+.venv/
+venv/
+ENV/
+
+# Sistema
+.DS_Store
+
+# Cache Python
+__pycache__/
+
+# Banco local do assistente IA
+data/banco_ia.duckdb

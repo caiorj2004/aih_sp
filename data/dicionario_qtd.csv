@@ -1,0 +1,55 @@
+﻿Variável,Descrição
+qtd_0101,Qtd – 0101 Ações coletivas/individuais em saúde
+qtd_0201,Qtd – 0201 Coleta de material
+qtd_0202,Qtd – 0202 Diagnóstico em laboratório clínico
+qtd_0203,Qtd – 0203 Diagnóstico por anatomia patológica e citopatologia
+qtd_0204,Qtd – 0204 Diagnóstico por radiologia
+qtd_0205,Qtd – 0205 Diagnóstico por ultrassonografia
+qtd_0206,Qtd – 0206 Diagnóstico por tomografia
+qtd_0207,Qtd – 0207 Diagnóstico por ressonância magnética
+qtd_0208,Qtd – 0208 Diagnóstico por medicina nuclear in vivo
+qtd_0209,Qtd – 0209 Diagnóstico por endoscopia
+qtd_0210,Qtd – 0210 Diagnóstico por radiologia intervencionista
+qtd_0211,Qtd – 0211 Métodos diagnósticos em especialidades
+qtd_0212,Qtd – 0212 Diagnóstico e procedimentos especiais em hemoterapia
+qtd_0213,Qtd – 0213 Diagnóstico em vigilância epidemiológica e ambiental
+qtd_0214,Qtd – 0214 Diagnóstico por teste rápido
+qtd_0301,Qtd – 0301 Consultas / Atendimentos / Acompanhamentos
+qtd_0302,Qtd – 0302 Fisioterapia
+qtd_0303,Qtd – 0303 Tratamentos clínicos (outras especialidades)
+qtd_0304,Qtd – 0304 Tratamento em oncologia
+qtd_0305,Qtd – 0305 Tratamento em nefrologia
+qtd_0306,Qtd – 0306 Hemoterapia
+qtd_0307,Qtd – 0307 Tratamentos odontológicos
+qtd_0308,"Qtd – 0308 Tratamento de lesões, envenenamentos e outros, decorrentes de causas externas"
+qtd_0309,Qtd – 0309 Terapias especializadas
+qtd_0310,Qtd – 0310 Parto e nascimento
+qtd_0311,Qtd – 0311 Cuidados paliativos
+qtd_0401,"Qtd – 0401 Pequenas cirurgias e cirurgias de pele, tecido subcutâneo e mucosa"
+qtd_0402,Qtd – 0402 Cirurgia de glândulas endócrinas
+qtd_0403,Qtd – 0403 Cirurgia do sistema nervoso central e periférico
+qtd_0404,"Qtd – 0404 Cirurgia das vias aéreas superiores, da face, da cabeça e do pescoço"
+qtd_0405,Qtd – 0405 Cirurgia do aparelho da visão
+qtd_0406,Qtd – 0406 Cirurgia do aparelho circulatório
+qtd_0407,"Qtd – 0407 Cirurgia do aparelho digestivo, órgãos anexos e parede abdominal"
+qtd_0408,Qtd – 0408 Cirurgia do sistema osteomuscular
+qtd_0409,Qtd – 0409 Cirurgia do aparelho geniturinário
+qtd_0410,Qtd – 0410 Cirurgia de mama
+qtd_0411,Qtd – 0411 Cirurgia obstétrica
+qtd_0412,Qtd – 0412 Cirurgia torácica
+qtd_0413,Qtd – 0413 Cirurgia reparadora
+qtd_0414,Qtd – 0414 Bucomaxilofacial
+qtd_0415,Qtd – 0415 Outras cirurgias
+qtd_0416,Qtd – 0416 Cirurgia em oncologia
+qtd_0417,Qtd – 0417 Anestesiologia
+qtd_0418,Qtd – 0418 Cirurgia em nefrologia
+qtd_0501,"Qtd – 0501 Coleta e exames para fins de doação de órgãos, tecidos e células e de transplante"
+qtd_0502,Qtd – 0502 Avaliação de morte encefálica
+qtd_0503,Qtd – 0503 Ações relacionadas à doação de órgãos e tecidos para transplante
+qtd_0504,Qtd – 0504 Processamento de tecidos para transplante
+qtd_0505,"Qtd – 0505 Transplante de órgãos, tecidos e células"
+qtd_0506,Qtd – 0506 Acompanhamento e intercorrências no pré e pós-transplante
+qtd_0603,Qtd – 0603 Medicamentos de âmbito hospitalar e urgência
+qtd_0702,"Qtd – 0702 Órteses, próteses e materiais especiais relacionados ao ato cirúrgico"
+qtd_0801,Qtd – 0801 Ações relacionadas ao estabelecimento
+qtd_0802,Qtd – 0802 Ações relacionadas ao atendimento
