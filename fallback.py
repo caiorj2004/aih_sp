@@ -22,7 +22,7 @@ from typing import List, Tuple
 import pandas as pd
 import streamlit as st
 
-from db import month_to_num, previous_period
+from db import month_to_num
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -169,6 +169,7 @@ def load_fallback_consolidated(
     # -----------------------------------------------------------------------
     df = _coerce_numeric_proc_cols(df, prefixes=("qtd_", "vl_", "total_qtd", "total_vl"))
 
+    df = df.copy()
     df["_mes_num"] = df["mes"].apply(month_to_num)
     return (
         df.sort_values(["ano", "_mes_num", "municipio_nome"])
