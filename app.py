@@ -388,14 +388,20 @@ with st.sidebar:
             _months = _fb_months
         st.divider()
 
+    # Define 2026 como padrão
+    def get_default_year(years_list):
+        if "2026" in [str(y) for y in years_list]:
+            return [y for y in years_list if str(y) == "2026"]
+        return years_list[-1:] if years_list else []
+
+    default_year_selected = get_default_year(_years)
+
     # --- INÍCIO DA ÁREA DE FILTROS ---
     if _using_fallback:
         st.header("Filtros (Modo Offline)")
-        selected_years = st.multiselect("Ano", options=_years, default=_years)
+        selected_years = st.multiselect("Ano", options=_years, default=default_year_selected)
         selected_months = st.multiselect("Mês", options=_months, default=_months)
         
-        # _fb_municipios é DataFrame com colunas cod_municipio e municipio_nome.
-        # O multiselect exibe nomes; load_fallback_consolidated filtra por cod_municipio.
         _mun_name_col = next(
             (c for c in ("municipio_nome","no_municipio","municipio","nome") if c in _fb_municipios.columns),
             _fb_municipios.columns[0],
@@ -417,6 +423,50 @@ with st.sidebar:
         selected_months_tuple = tuple(selected_months)
         selected_ufs = ()
         selected_municipios = tuple(_mun_label_to_code[lbl] for lbl in selected_mun_labels)
+
+    elif _db_error is None and _years and _months and _uf_options is not None:
+        st.header("Filtros")
+        uf_label_to_code = {
+            f"{row.uf_sigla} — {row.uf_nome}": row.uf_codigo
+            for row in _uf_options.itertuples(index=False)
+        }
+
+        # FORMULÁRIO UNIFICADO (Modo Online)
+        with st.form("sidebar_filters_db"):
+            selected_years = st.multiselect("Ano", options=_years, default=default_year_selected)
+            selected_months = st.multiselect("Mês", options=_months, default=_months)
+            selected_uf_labels = st.multiselect(
+                "Unidade da Federação (UF)",
+                options=list(uf_label_to_code.keys()),
+                default=list(uf_label_to_code.keys())[:1],
+            )
+            _form_submitted = st.form_submit_button("🔍 Aplicar Filtros e Atualizar Dashboard")
+
+        # Persistência e Processamento das UFs
+        _submitted_ufs_codes = tuple(uf_label_to_code[lbl] for lbl in selected_uf_labels)
+        if _form_submitted or "_submitted_ufs" not in st.session_state:
+            st.session_state["_submitted_ufs"] = _submitted_ufs_codes
+            st.session_state["last_submitted_years"] = tuple(selected_years)
+            st.session_state["last_submitted_months"] = tuple(selected_months)
+
+        selected_ufs = st.session_state["_submitted_ufs"]
+        selected_years_tuple = st.session_state.get("last_submitted_years", tuple(selected_years))
+        selected_months_tuple = st.session_state.get("last_submitted_months", tuple(selected_months))
+
+        # Filtro de Municípios dinâmico para Modo Online
+        municipio_options_df = load_municipality_options(selected_ufs)
+        municipio_label_to_code = {
+            f"{row.municipio_nome} ({row.cod_municipio})": row.cod_municipio
+            for row in municipio_options_df.itertuples(index=False)
+        }
+
+        selected_mun_labels = st.multiselect(
+            "Município (Opcional)",
+            options=list(municipio_label_to_code.keys()),
+            default=[],
+            key="mun_filter_db"
+        )
+        selected_municipios = tuple(municipio_label_to_code[label] for label in selected_mun_labels)
 
     elif _db_error is None and _years and _months and _uf_options is not None:
         st.header("Filtros")
